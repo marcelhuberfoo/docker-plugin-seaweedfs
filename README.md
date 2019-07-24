@@ -17,45 +17,31 @@ Once these conditions are met you are ready to install the plugin.
 
 ### Installation
 
-The plugin is simple use and can be installed as a Docker container without having to install any other system dependencies.
-
-    $ docker plugin install --alias seaweedfs katharostech/seaweedfs-volume-plugin HOST=localhost:8888
-
-Docker will prompt asking if you want to grant the permissions required to run the plugin. Select yes and the plugin will download and install.
-
-> **Note:** We set the plugin alias to `seaweedfs`. This is completely optional, but it allows us to refer to the plugin with a much shorter name. Throughout this readme, when reference is made to the `seaweedfs` driver, it is referring to this alias.
-
-That's it! You can now see your newly installed Docker plugin by running `docker plugin ls`.
-
-    $ docker plugin ls
-    ID                  NAME                 DESCRIPTION                         ENABLED
-    4a08a23cf2eb        seaweedfs:latest     SeaweedFS volume plugin for Docker  true
-
-You should now be able to create a Docker volume using our new `seaweedfs` driver.
-
-    $ docker volume create --driver seaweedfs weed-vol
-    weed-vol
-
-You can see it by running `docker volume ls`.
-
-    $ docker volume ls
-    DRIVER               VOLUME NAME
-    seaweedfs:latest      weed-vol
-
-Now that you have created the volume you can mount it into a container using its name. Lets mount it into an alpine container and put some data in it.
-
-```sh
-$ docker run -it --rm -v weed-vol:/data alpine sh
-/ $ cd /data # Switch to our volume mountpoint
-/data $ cp -R /etc . # Copy the whole container /etc directory to it
-/data $ ls # See that the copy was successful
-etc
-/data $ exit # Exit ( the container will be removed because of the --rm )
 ```
-
-We should now have a copy of the alpine container's whole `/etc` directory on our `weed-vol` volume. You can verify this by checking the `/docker/volumes/weed-vol/` directory on your SeaweedFS installation. You should see the `etc` folder with all of its files and folders in it. Congratulations! You have successfully mounted your SeaweedFS filesytem into a docker container and stored data in it!
-
-If you run another container, you can mount the same volume into it and that container will also see the data. Your data will stick around as long as that volume exists. When you are done with it, you can remove the volume by running `docker volume rm weed-vol`.
+sven@t440s:~$ docker plugin ls
+ID                  NAME                DESCRIPTION         ENABLED
+sven@t440s:~$ docker plugin install --alias swarm svendowideit/seaweedfs-volume-plugin:next DEBUG=true
+Plugin "svendowideit/seaweedfs-volume-plugin:next" is requesting the following privileges:
+ - network: [host]
+ - mount: [/var/lib/docker/plugins/]
+ - mount: [/run/docker.sock]
+ - device: [/dev/fuse]
+ - capabilities: [CAP_SYS_ADMIN]
+Do you grant the above permissions? [y/N] y
+next: Pulling from svendowideit/seaweedfs-volume-plugin
+51eeeee7b008: Download complete 
+Digest: sha256:5a50736c3b6fa574e03638f4195f6175e8691818fdccf10e0d07e59813af494b
+Status: Downloaded newer image for svendowideit/seaweedfs-volume-plugin:next
+Installed plugin svendowideit/seaweedfs-volume-plugin:next
+sven@t440s:~$ 
+sven@t440s:~$ 
+sven@t440s:~$ docker volume create -d swarm test
+test
+sven@t440s:~$ docker run --rm -it -v test:/test debian sh
+# ls test
+date.txt  etc
+# 
+```
 
 ### Features
 
