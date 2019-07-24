@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -13,38 +12,34 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sirupsen/logrus"
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/sirupsen/logrus"
 )
 
-const socketAddress = "/run/docker/plugins/sshfs.sock"
+const socketAddress = "/run/docker/plugins/seaweedfs.sock"
 
-type sshfsVolume struct {
-	Password string
-	Sshcmd   string
-	Port     string
-
+type seaweedfsVolume struct {
 	Options []string
 
 	Mountpoint  string
 	connections int
 }
 
-type sshfsDriver struct {
+type seaweedfsDriver struct {
 	sync.RWMutex
 
 	root      string
 	statePath string
-	volumes   map[string]*sshfsVolume
+	volumes   map[string]*seaweedfsVolume
 }
 
-func newSshfsDriver(root string) (*sshfsDriver, error) {
+func newseaweedfsDriver(root string) (*seaweedfsDriver, error) {
 	logrus.WithField("method", "new driver").Debug(root)
 
-	d := &sshfsDriver{
+	d := &seaweedfsDriver{
 		root:      filepath.Join(root, "volumes"),
-		statePath: filepath.Join(root, "state", "sshfs-state.json"),
-		volumes:   map[string]*sshfsVolume{},
+		statePath: filepath.Join(root, "state", "seaweedfs-state.json"),
+		volumes:   map[string]*seaweedfsVolume{},
 	}
 
 	data, err := ioutil.ReadFile(d.statePath)
@@ -63,7 +58,7 @@ func newSshfsDriver(root string) (*sshfsDriver, error) {
 	return d, nil
 }
 
-func (d *sshfsDriver) saveState() {
+func (d *seaweedfsDriver) saveState() {
 	data, err := json.Marshal(d.volumes)
 	if err != nil {
 		logrus.WithField("statePath", d.statePath).Error(err)
@@ -75,21 +70,19 @@ func (d *sshfsDriver) saveState() {
 	}
 }
 
-func (d *sshfsDriver) Create(r *volume.CreateRequest) error {
+// Create Instructs the plugin that the user wants to create a volume,
+// given a user specified volume name. The plugin does not need to actually
+// manifest the volume on the filesystem yet (until Mount is called).
+// Opts is a map of driver specific options passed through from the user request.
+func (d *seaweedfsDriver) Create(r *volume.CreateRequest) error {
 	logrus.WithField("method", "create").Debugf("%#v", r)
 
 	d.Lock()
 	defer d.Unlock()
-	v := &sshfsVolume{}
+	v := &seaweedfsVolume{}
 
 	for key, val := range r.Options {
 		switch key {
-		case "sshcmd":
-			v.Sshcmd = val
-		case "password":
-			v.Password = val
-		case "port":
-			v.Port = val
 		default:
 			if val != "" {
 				v.Options = append(v.Options, key+"="+val)
@@ -99,10 +92,11 @@ func (d *sshfsDriver) Create(r *volume.CreateRequest) error {
 		}
 	}
 
-	if v.Sshcmd == "" {
-		return logError("'sshcmd' option required")
-	}
-	v.Mountpoint = filepath.Join(d.root, fmt.Sprintf("%x", md5.Sum([]byte(v.Sshcmd))))
+	// if v.Sshcmd == "" {
+	// 	return logError("'sshcmd' option required")
+	// }
+	//v.Mountpoint = filepath.Join(d.root, fmt.Sprintf("%x", md5.Sum([]byte(v.Sshcmd))))
+	v.Mountpoint = filepath.Join("/mnt/docker-volumes", r.Name)
 
 	d.volumes[r.Name] = v
 
@@ -111,7 +105,9 @@ func (d *sshfsDriver) Create(r *volume.CreateRequest) error {
 	return nil
 }
 
-func (d *sshfsDriver) Remove(r *volume.RemoveRequest) error {
+// Remove the specified volume from disk. This request is issued when a
+// user invokes docker rm -v to remove volumes associated with a container.
+func (d *seaweedfsDriver) Remove(r *volume.RemoveRequest) error {
 	logrus.WithField("method", "remove").Debugf("%#v", r)
 
 	d.Lock()
@@ -133,7 +129,8 @@ func (d *sshfsDriver) Remove(r *volume.RemoveRequest) error {
 	return nil
 }
 
-func (d *sshfsDriver) Path(r *volume.PathRequest) (*volume.PathResponse, error) {
+// Path requests the path to the volume with the given volume_name.
+func (d *seaweedfsDriver) Path(r *volume.PathRequest) (*volume.PathResponse, error) {
 	logrus.WithField("method", "path").Debugf("%#v", r)
 
 	d.RLock()
@@ -147,7 +144,13 @@ func (d *sshfsDriver) Path(r *volume.PathRequest) (*volume.PathResponse, error) 
 	return &volume.PathResponse{Mountpoint: v.Mountpoint}, nil
 }
 
-func (d *sshfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, error) {
+// Mount is called once per container start.
+// If the same volume_name is requested more than once, the plugin may need to keep
+// track of each new mount request and provision at the first mount request and
+// deprovision at the last corresponding unmount request.
+// Docker requires the plugin to provide a volume, given a user specified volume name.
+// ID is a unique ID for the caller that is requesting the mount.
+func (d *seaweedfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, error) {
 	logrus.WithField("method", "mount").Debugf("%#v", r)
 
 	d.Lock()
@@ -182,7 +185,11 @@ func (d *sshfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, erro
 	return &volume.MountResponse{Mountpoint: v.Mountpoint}, nil
 }
 
-func (d *sshfsDriver) Unmount(r *volume.UnmountRequest) error {
+// Docker is no longer using the named volume.
+// Unmount is called once per container stop.
+// Plugin may deduce that it is safe to deprovision the volume at this point.
+// ID is a unique ID for the caller that is requesting the mount.
+func (d *seaweedfsDriver) Unmount(r *volume.UnmountRequest) error {
 	logrus.WithField("method", "unmount").Debugf("%#v", r)
 
 	d.Lock()
@@ -204,7 +211,8 @@ func (d *sshfsDriver) Unmount(r *volume.UnmountRequest) error {
 	return nil
 }
 
-func (d *sshfsDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error) {
+// Get info about volume_name.
+func (d *seaweedfsDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error) {
 	logrus.WithField("method", "get").Debugf("%#v", r)
 
 	d.Lock()
@@ -218,7 +226,8 @@ func (d *sshfsDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error) {
 	return &volume.GetResponse{Volume: &volume.Volume{Name: r.Name, Mountpoint: v.Mountpoint}}, nil
 }
 
-func (d *sshfsDriver) List() (*volume.ListResponse, error) {
+// List of volumes registered with the plugin.
+func (d *seaweedfsDriver) List() (*volume.ListResponse, error) {
 	logrus.WithField("method", "list").Debugf("")
 
 	d.Lock()
@@ -231,35 +240,70 @@ func (d *sshfsDriver) List() (*volume.ListResponse, error) {
 	return &volume.ListResponse{Volumes: vols}, nil
 }
 
-func (d *sshfsDriver) Capabilities() *volume.CapabilitiesResponse {
+// Get the list of capabilities the driver supports.
+// The driver is not required to implement Capabilities. If it is not implemented, the default values are used.
+func (d *seaweedfsDriver) Capabilities() *volume.CapabilitiesResponse {
 	logrus.WithField("method", "capabilities").Debugf("")
 
 	return &volume.CapabilitiesResponse{Capabilities: volume.Capability{Scope: "local"}}
 }
 
-func (d *sshfsDriver) mountVolume(v *sshfsVolume) error {
-	cmd := exec.Command("sshfs", "-oStrictHostKeyChecking=no", v.Sshcmd, v.Mountpoint)
-	if v.Port != "" {
-		cmd.Args = append(cmd.Args, "-p", v.Port)
-	}
-	if v.Password != "" {
-		cmd.Args = append(cmd.Args, "-o", "workaround=rename", "-o", "password_stdin")
-		cmd.Stdin = strings.NewReader(v.Password)
-	}
+func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
+	// # docker run --rm -it --name seaweedfs_test --net seaweedfs_internal --cap-add SYS_ADMIN --device=/dev/fuse:/dev/fuse --security-opt=apparmor:unconfined --entrypoint sh chrislusf/seaweedfs:1.41
+	// # / # weed mount -filer=filer:8888 -dir=/mnt -filer.path=/
+	//cmd := exec.Command("seaweedfs", "-oStrictHostKeyChecking=no", v.Sshcmd, v.Mountpoint)
+	// if v.Port != "" {
+	// 	cmd.Args = append(cmd.Args, "-p", v.Port)
+	// }
+	// if v.Password != "" {
+	// 	cmd.Args = append(cmd.Args, "-o", "workaround=rename", "-o", "password_stdin")
+	// 	cmd.Stdin = strings.NewReader(v.Password)
+	// }
 
-	for _, option := range v.Options {
-		cmd.Args = append(cmd.Args, "-o", option)
-	}
+	os.MkdirAll(v.Mountpoint, 0755)
+	cmd := exec.Command(
+		"docker",
+		"run",
+		"--rm",
+		"-d",
+		"--net=seaweedfs_internal",
+		"-v="+getPluginDir()+":/mnt/docker-volumes",
+		"--cap-add=SYS_ADMIN",
+		"--device=/dev/fuse:/dev/fuse",
+		"--security-opt=apparmor:unconfined",
+		"--entrypoint=weed",
+		"svendowideit/docker-volume-seaweedfs:rootfs",
+		"mount",
+		"-filer=filer:8888",
+		"-dir="+v.Mountpoint,
+		"-filer.path="+v.Mountpoint,
+	)
+
+	// for _, option := range v.Options {
+	// 	cmd.Args = append(cmd.Args, "-o", option)
+	// }
 
 	logrus.Debug(cmd.Args)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return logError("sshfs command execute failed: %v (%s)", err, output)
+		return logError("seaweedfs command execute failed: %v (%s)", err, output)
 	}
 	return nil
 }
 
-func (d *sshfsDriver) unmountVolume(target string) error {
+func getPluginDir() string {
+	cmd := exec.Command("docker", "plugin", "ls", "--no-trunc", "--format={{.ID}}")
+	logrus.Debug(cmd.Args)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logrus.Debugf("seaweedfs command execute failed: %v (%s)", err, output)
+		return ""
+	}
+	pluginHash := strings.TrimSpace(string(output))
+	return "/var/lib/docker/plugins/" + pluginHash + "/propagated-mount/"
+}
+
+func (d *seaweedfsDriver) unmountVolume(target string) error {
 	cmd := fmt.Sprintf("umount %s", target)
 	logrus.Debug(cmd)
 	return exec.Command("sh", "-c", cmd).Run()
@@ -276,7 +320,7 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	d, err := newSshfsDriver("/mnt")
+	d, err := newseaweedfsDriver("/mnt")
 	if err != nil {
 		log.Fatal(err)
 	}

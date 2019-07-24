@@ -1,12 +1,23 @@
-FROM node:10-alpine
+FROM golang:1.12-alpine as builder
+WORKDIR /src
+RUN set -ex \
+    && apk add --no-cache --virtual .build-deps \
+    gcc libc-dev git
 
+COPY . /src
+RUN set -ex \
+    && go install --ldflags '-extldflags "-static"'
+
+RUN set -ex \
+    && apk del .build-deps
+CMD ["/go/bin/docker-plugin-seaweedfs"]
+
+FROM alpine
 ####
 # Install SeaweedFS Client
 ####
-
 ARG SEAWEEDFS_VERSION=1.25
 ENV SEAWEEDFS_VERSION=$SEAWEEDFS_VERSION
-
 RUN apk update && \
     apk add fuse3 && \
     apk add --no-cache --virtual build-dependencies --update wget curl ca-certificates && \
@@ -15,36 +26,14 @@ RUN apk update && \
     apk del build-dependencies && \
     rm -rf /tmp/*
 
-####
-# Install Docker volume driver API server
-####
+# I have a docker socket, and this may help me test
+RUN cd /tmp \
+    && wget https://download.docker.com/linux/static/stable/x86_64/docker-19.03.0.tgz \
+    && tar zxvf docker-19.03.0.tgz \
+    && cp docker/docker /bin/ \
+    && rm -rf docker*
 
-# Create directories for mounts
-RUN mkdir -p /mnt/seaweedfs
-RUN mkdir -p /mnt/docker-volumes
+RUN mkdir -p /run/docker/plugins /mnt/state /mnt/volumes
 
-# Copy in package.json
-COPY package.json package-lock.json /project/
-
-# Switch to the project directory
-WORKDIR /project
-
-# Install project dependencies
-RUN npm install
-
-# Set Configuration Defaults
-ENV HOST=mfsmaster \
-    PORT=9421 \
-    ALIAS=seaweedfs \
-    ROOT_VOLUME_NAME="" \
-    MOUNT_OPTIONS="" \
-    REMOTE_PATH=/docker/volumes \
-    LOCAL_PATH="" \
-    CONNECT_TIMEOUT=10000 \
-    LOG_LEVEL=info
-
-# Copy in source code
-COPY index.js /project
-
-# Set the Docker entrypoint
-ENTRYPOINT ["node", "index.js"]
+COPY --from=builder /go/bin/docker-plugin-seaweedfs .
+CMD ["docker-plugin-seaweedfs"]
