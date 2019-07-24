@@ -19,7 +19,7 @@ FROM alpine
 ARG SEAWEEDFS_VERSION=1.25
 ENV SEAWEEDFS_VERSION=$SEAWEEDFS_VERSION
 RUN apk update && \
-    apk add fuse3 && \
+    apk add fuse && \
     apk add --no-cache --virtual build-dependencies --update wget curl ca-certificates && \
     wget -qO /tmp/linux_amd64.tar.gz https://github.com/chrislusf/seaweedfs/releases/download/${SEAWEEDFS_VERSION}/linux_amd64.tar.gz && \
     tar -C /usr/bin/ -xzvf /tmp/linux_amd64.tar.gz && \

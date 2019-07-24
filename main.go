@@ -21,8 +21,8 @@ const socketAddress = "/run/docker/plugins/seaweedfs.sock"
 type seaweedfsVolume struct {
 	Options []string
 
-	Mountpoint  string
-	connections int
+	Name, Mountpoint string
+	connections      int
 }
 
 type seaweedfsDriver struct {
@@ -97,6 +97,7 @@ func (d *seaweedfsDriver) Create(r *volume.CreateRequest) error {
 	// }
 	//v.Mountpoint = filepath.Join(d.root, fmt.Sprintf("%x", md5.Sum([]byte(v.Sshcmd))))
 	v.Mountpoint = filepath.Join("/mnt/docker-volumes", r.Name)
+	v.Name = r.Name
 
 	d.volumes[r.Name] = v
 
@@ -266,6 +267,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		"run",
 		"--rm",
 		"-d",
+		"--name=seaweed-volume-plugin-"+v.Name,
 		"--net=seaweedfs_internal",
 		"-v="+getPluginDir()+":/mnt/docker-volumes",
 		"--cap-add=SYS_ADMIN",
@@ -275,7 +277,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		"svendowideit/docker-volume-seaweedfs:rootfs",
 		"mount",
 		"-filer=filer:8888",
-		"-dir="+v.Mountpoint,
+		"-dir=/mnt/docker-volumes",
 		"-filer.path="+v.Mountpoint,
 	)
 
