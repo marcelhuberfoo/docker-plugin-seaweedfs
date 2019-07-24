@@ -269,15 +269,16 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		"-d",
 		"--name=seaweed-volume-plugin-"+v.Name,
 		"--net=seaweedfs_internal",
-		"-v="+getPluginDir()+":/mnt/docker-volumes",
+		//"-v="+getPluginDir()+":/mnt/docker-volumes",
+		"--mount", "type=bind,src="+getPluginDir()+",dst=/mnt/docker-volumes,bind-propagation=rshared",
 		"--cap-add=SYS_ADMIN",
 		"--device=/dev/fuse:/dev/fuse",
 		"--security-opt=apparmor:unconfined",
 		"--entrypoint=weed",
-		"svendowideit/docker-volume-seaweedfs:rootfs",
+		"svendowideit/seaweedfs-volume-plugin-rootfs:next", // TODO: need to figure this out dynamically
 		"mount",
 		"-filer=filer:8888",
-		"-dir=/mnt/docker-volumes",
+		"-dir="+v.Mountpoint,
 		"-filer.path="+v.Mountpoint,
 	)
 
@@ -294,6 +295,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 }
 
 func getPluginDir() string {
+	// TODO: this can't work - how do i work out which plugin this one is?
 	cmd := exec.Command("docker", "plugin", "ls", "--no-trunc", "--format={{.ID}}")
 	logrus.Debug(cmd.Args)
 	output, err := cmd.CombinedOutput()
@@ -306,6 +308,7 @@ func getPluginDir() string {
 }
 
 func (d *seaweedfsDriver) unmountVolume(target string) error {
+	//TODO: need to remove the 		"--name=seaweed-volume-plugin-"+v.Name, container
 	cmd := fmt.Sprintf("umount %s", target)
 	logrus.Debug(cmd)
 	return exec.Command("sh", "-c", cmd).Run()

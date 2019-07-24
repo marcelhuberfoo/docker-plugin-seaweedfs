@@ -2,7 +2,7 @@ node_modules/
 plugin/
 .git/
 Dockerfile
-README.md
+*.md
 Makefile
 .gitignore
 .dockerignore
