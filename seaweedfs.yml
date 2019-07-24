@@ -1,0 +1,89 @@
+
+# to test:
+# docker run --rm -it --name seaweedfs_test --net seaweedfs_internal --cap-add SYS_ADMIN --device=/dev/fuse:/dev/fuse --security-opt=apparmor:unconfined --entrypoint sh chrislusf/seaweedfs:1.41
+# / # apk --no-cache add fuse
+# / # weed mount -filer=filer:8888 -dir=/mnt -filer.path=/
+# then docker exec into that container, as fise will be running in the foreground...
+# docker exec -it seaweedfs_test sh
+# / # cd /mnt
+# /mnt # cp -r /var .
+# /mnt # du 
+# and then do the same from the other swarm nodes...
+
+
+# TODO: needs
+# docker plugin install --alias seaweedfs --grant-all-permissions katharostech/seaweedfs-volume-plugin HOST=localhost:8888
+# docker volume create --driver seaweedfs weed-vol
+
+version: "3.6"
+
+services:
+  master:
+    hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
+    image: chrislusf/seaweedfs:latest
+    # ports: 9333:9333 19333:19333
+    command: "master -ip 0.0.0.0 -port 9333 " # -peers=localhost:9333,localhost:9334,localhost:9335"
+    networks:
+      - internal
+      #- infra_traefik
+    deploy:
+      replicas: 1
+      # labels:
+      #   traefik.docker.network: infra_traefik
+      #   traefik.seaweedfs.frontend.rule: Host:fs.${STACKDOMAIN:-loc.alho.st}
+      #   traefik.seaweedfs.healthcheck.path: /
+      #   ${PROD_ONLY}traefik.seaweedfs.frontend.auth.forward.address: https://${STACKDOMAIN:-loc.alho.st}/auth/ensure/admin
+      #   traefik.seaweedfs.frontend.passHostHeader: "true"
+      #   traefik.seaweedfs.frontend.priority: 99
+      #   traefik.seaweedfs.port: 9333
+
+  volume:
+    hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
+    image: chrislusf/seaweedfs:latest
+    # ports: 8080:8080 18080:18080
+    command: 'volume -max=15 -mserver=master:9333 -port=8080'
+    networks:
+      - internal
+    volumes:
+      - data:/data
+    deploy:
+      mode: global
+      #replicas: 1
+
+  filer:
+    hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
+    image: chrislusf/seaweedfs:latest
+    # ports:
+    # - 8888:8888
+    # - 18888:18888
+    command: 'filer -master=master:9333'
+    networks:
+      - internal
+
+  s3:
+    image: chrislusf/seaweedfs:latest
+    # ports:
+    # - 8333:8333
+    command: 's3 -filer=filer:8888'
+    networks:
+      - internal
+  docker-volume-plugin-run-once:
+    image: docker:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: "docker plugin install --alias seaweedfs --grant-all-permissions katharostech/seaweedfs-volume-plugin HOST=${STACKDOMAIN}:8888"
+    deploy:
+      mode: global
+      restart_policy:
+        condition: none
+
+volumes:
+  data:
+
+networks:
+  internal:
+    attachable: true
+    # external:
+    #   name: host
+  # infra_traefik:
+  #   external: true
