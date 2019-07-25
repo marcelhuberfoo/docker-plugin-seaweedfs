@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -270,6 +271,40 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 	// 	cmd.Args = append(cmd.Args, "-o", option)
 	// }
 
+	// TODO: to make a mount available to a different user
+	os.MkdirAll(v.Mountpoint, 0777)
+	for _, option := range v.Options {
+		//cmd.Args = append(cmd.Args, "-o", option)
+		userOpt := ""
+		if strings.HasPrefix(option, "uid=") {
+			userOpt = strings.TrimPrefix(option, "uid=")
+		}
+		if strings.HasPrefix(option, "user=") {
+			userOpt = strings.TrimPrefix(option, "user=")
+		}
+		logrus.Debugf("option: (%s)", option)
+		if userOpt != "" {
+			logrus.Debugf("userOpt: (%s)", userOpt)
+			u, err := user.Lookup(userOpt)
+			if err != nil {
+				u, err = user.LookupId(userOpt)
+			}
+			uid, gid := 0, 0
+			if err == nil && u != nil {
+				logrus.Debugf("u: (%#v)", u)
+				if parsedId, pe := strconv.ParseUint(u.Uid, 10, 32); pe == nil {
+					uid = int(parsedId)
+				}
+				if parsedId, pe := strconv.ParseUint(u.Gid, 10, 32); pe == nil {
+					gid = int(parsedId)
+				}
+				logrus.Debugf("chown: (%s, %d, %d)", v.Mountpoint+"_sven", uid, gid)
+				os.Chown(v.Mountpoint, uid, gid)
+				os.Chmod(v.Mountpoint, 0777)
+			}
+		}
+	}
+
 	output, err := runCmd(
 		"docker",
 		"run",
@@ -283,6 +318,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		"--security-opt=apparmor:unconfined",
 		"--entrypoint=weed",
 		"svendowideit/seaweedfs-volume-plugin-rootfs:next", // TODO: need to figure this out dynamically
+		"-v", "2",
 		"mount",
 		"-filer=filer:8888",
 		"-dir="+v.Mountpoint,

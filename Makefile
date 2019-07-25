@@ -40,7 +40,7 @@ enter:
 	@sudo nsenter --target $(shell ps -U root -u | grep docker-plugin-seaweedf | xargs | cut -f2 -d" ") --mount --uts --ipc --net --pid sh
 
 sven:
-	@docker volume create -d swarm test
+	@docker volume create -d swarm -o uid=65534 test
 	@docker run --rm -it -v test:/test debian
 
 mountall:

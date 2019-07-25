@@ -16,7 +16,7 @@ FROM alpine
 ####
 # Install SeaweedFS Client
 ####
-ARG SEAWEEDFS_VERSION=1.25
+ARG SEAWEEDFS_VERSION=1.42
 ENV SEAWEEDFS_VERSION=$SEAWEEDFS_VERSION
 RUN apk update && \
     apk add fuse && \
@@ -32,6 +32,9 @@ RUN cd /tmp \
     && tar zxvf docker-19.03.0.tgz \
     && cp docker/docker /bin/ \
     && rm -rf docker*
+
+# let non-root users fusemount
+RUN echo "user_allow_other" >> /etc/fuse.conf
 
 RUN mkdir -p /run/docker/plugins /mnt/state /mnt/volumes
 

@@ -1,0 +1,24 @@
+version: "3.6"
+
+services:
+  test:
+    # user: nobody
+    user: "65534"
+    #guid: 65534
+    image: alpine
+    command: sh -c "whoami && echo 'root:' && ls -la / && echo 'write to /test/date.txt:' && date > /test/date.txt && echo '/test:' && ls -al /test && read"
+    volumes:
+      - test:/test
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+
+volumes:
+  test:
+    driver: swarm
+    driver_opts:
+      # user: nobody
+      uid: 65534
+    name: "{{.Node.Hostname}}_{{.Service.Name}}"
+
