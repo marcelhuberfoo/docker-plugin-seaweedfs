@@ -203,9 +203,8 @@ func (d *seaweedfsDriver) Unmount(r *volume.UnmountRequest) error {
 	v.connections--
 
 	if v.connections <= 0 {
-		if err := d.unmountVolume(v.Mountpoint); err != nil {
-			return logError(err.Error())
-		}
+		//TODO: need to remove the 		"--name=seaweed-volume-plugin-"+v.Name, container
+
 		v.connections = 0
 	}
 
@@ -250,18 +249,6 @@ func (d *seaweedfsDriver) Capabilities() *volume.CapabilitiesResponse {
 }
 
 func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
-	// # docker run --rm -it --name seaweedfs_test --net seaweedfs_internal --cap-add SYS_ADMIN --device=/dev/fuse:/dev/fuse --security-opt=apparmor:unconfined --entrypoint sh chrislusf/seaweedfs:1.41
-	// # / # weed mount -filer=filer:8888 -dir=/mnt -filer.path=/
-	//cmd := exec.Command("seaweedfs", "-oStrictHostKeyChecking=no", v.Sshcmd, v.Mountpoint)
-	// if v.Port != "" {
-	// 	cmd.Args = append(cmd.Args, "-p", v.Port)
-	// }
-	// if v.Password != "" {
-	// 	cmd.Args = append(cmd.Args, "-o", "workaround=rename", "-o", "password_stdin")
-	// 	cmd.Stdin = strings.NewReader(v.Password)
-	// }
-
-	os.MkdirAll(v.Mountpoint, 0755)
 	cmd := exec.Command(
 		"docker",
 		"run",
@@ -269,8 +256,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		"-d",
 		"--name=seaweed-volume-plugin-"+v.Name,
 		"--net=seaweedfs_internal",
-		//"-v="+getPluginDir()+":/mnt/docker-volumes",
-		"--mount", "type=bind,src="+getPluginDir()+",dst=/mnt/docker-volumes,bind-propagation=rshared",
+		"--mount", "type=bind,src="+getPluginDir()+"/propagated-mount/,dst=/mnt/docker-volumes/,bind-propagation=rshared",
 		"--cap-add=SYS_ADMIN",
 		"--device=/dev/fuse:/dev/fuse",
 		"--security-opt=apparmor:unconfined",
@@ -295,26 +281,45 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 }
 
 func getPluginDir() string {
+	// TODO: store this, but verify - as it could change any time... (and if it does, that's a signal to re-run the mount)
 	// write a unique filename to /tmp
-	// start a container with access to /var/lib/docker/plugins/ and search for that file in */rootfs/tmp
-	// use it.
+	content := []byte("temporary file's content")
+	tmpfile, err := ioutil.TempFile("/tmp", "example")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	cmd := exec.Command("docker", "plugin", "ls", "--no-trunc", "--format={{.ID}}")
+	defer os.Remove(tmpfile.Name()) // clean up
+
+	if _, err := tmpfile.Write(content); err != nil {
+		log.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		log.Fatal(err)
+	}
+	// start a container with access to /var/lib/docker/plugins/ and search for that file in */rootfs/tmp
+	filename := strings.TrimPrefix(tmpfile.Name(), "/tmp/")
+	cmd := exec.Command(
+		"docker",
+		"run",
+		"--rm",
+		"-v=/var/lib/docker/plugins/:/var/lib/docker/plugins/",
+		"--entrypoint=find",
+		"svendowideit/seaweedfs-volume-plugin-rootfs:next", // TODO: need to figure this out dynamically
+		"/var/lib/docker/plugins/",
+		"-name", filename,
+	)
+	// use it.
 	logrus.Debug(cmd.Args)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		logrus.Debugf("seaweedfs command execute failed: %v (%s)", err, output)
 		return ""
 	}
-	pluginHash := strings.TrimSpace(string(output))
-	return "/var/lib/docker/plugins/" + pluginHash + "/propagated-mount/"
-}
-
-func (d *seaweedfsDriver) unmountVolume(target string) error {
-	//TODO: need to remove the 		"--name=seaweed-volume-plugin-"+v.Name, container
-	cmd := fmt.Sprintf("umount %s", target)
-	logrus.Debug(cmd)
-	return exec.Command("sh", "-c", cmd).Run()
+	pluginDir := strings.TrimSpace(string(output))
+	pluginDir = strings.TrimSuffix(pluginDir, "/rootfs"+tmpfile.Name())
+	logrus.Debug(pluginDir)
+	return pluginDir
 }
 
 func logError(format string, args ...interface{}) error {
