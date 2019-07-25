@@ -1,21 +1,32 @@
 # SeaweedFS Docker Plugin
 
-> **Note:** This plugin was forked from a [LizardFS Docker Plugin](https://github.com/kadimasolutions/docker-plugin_lizardfs) so there may still be references to LizardFS somewhere in here that I haven't found and replaced yet.
+This is stupendously experimental. I'm doing all sorts of not-recomended things to break out of Docker's attempts at confining plugins.
 
-A Docker volume driver plugin for mounting a [SeaweedFS](https://github.com/chrislusf/seaweedfs) filesystem. Allows you to transparently provide storage for your Docker containers using SeaweedFS. This plugin can be used in combination with the [SeaweedFS Docker Image](https://github.com/chrislusf/seaweedfs/tree/master/docker) to create a fully containerized, clustered storage solution for Docker Swarm. Documentation and development are still in progress.
+
 
 ## Usage
 
+Once running, you'll be able to use the `swarm` volume type just like you do local storage, but it will be accessible to any container, on any node.
+multi-container access works, but there is no file-lock sharing, so you do need to deal with collisions in your code.
+
 ### Prerequisites
 
-Before you can use the plugin you must have:
-
-* A running SeaweedFS cluster with a [Filer](https://github.com/chrislusf/seaweedfs/wiki/Directories-and-Files) that your Docker host can access.
-* A directory on the SeaweedFS filesystem that can be used by the plugin to store Docker volumes. This can be any normal directory. By default the plugin will use `/docker/volumes`, but this can be changed to something else like the root directory, for example ( see [REMOTE_PATH](#remote-path) ).
-
-Once these conditions are met you are ready to install the plugin.
+A Docker swarm.
 
 ### Installation
+
+#### The simplest way
+
+`docker stack deploy -c seaweedfs.yml seaweedfs`
+
+This will start 
+* a persistent volume server on every swarm node, 
+* a persistent filer service on one node (and when it moves, you'll lose access to your data :( )
+* a non-persistent master node, when it moves, it will rebuild its data from the volume containers
+* an s3 container that talks to the filer (untested by me)
+* and a global run-once service that will install the volume plugin on every node, ready to be used by other swarm stacks.
+
+#### manually, assuming you already have a seaweedfs swarm stack running
 
 ```
 sven@t440s:~$ docker plugin ls
