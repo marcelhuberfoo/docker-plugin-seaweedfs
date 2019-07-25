@@ -10,37 +10,21 @@
 # /mnt # du 
 # and then do the same from the other swarm nodes...
 
-
-# TODO: needs
-# docker plugin install --alias seaweedfs --grant-all-permissions katharostech/seaweedfs-volume-plugin HOST=localhost:8888
-# docker volume create --driver seaweedfs weed-vol
-
 version: "3.6"
 
 services:
   master:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
     image: chrislusf/seaweedfs:latest
-    # ports: 9333:9333 19333:19333
     command: "master -ip 0.0.0.0 -port 9333 -defaultReplication=000"
     networks:
       - internal
-      #- infra_traefik
     deploy:
       replicas: 1
-      # labels:
-      #   traefik.docker.network: infra_traefik
-      #   traefik.seaweedfs.frontend.rule: Host:fs.${STACKDOMAIN:-loc.alho.st}
-      #   traefik.seaweedfs.healthcheck.path: /
-      #   ${PROD_ONLY}traefik.seaweedfs.frontend.auth.forward.address: https://${STACKDOMAIN:-loc.alho.st}/auth/ensure/admin
-      #   traefik.seaweedfs.frontend.passHostHeader: "true"
-      #   traefik.seaweedfs.frontend.priority: 99
-      #   traefik.seaweedfs.port: 9333
 
   volume:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
     image: chrislusf/seaweedfs:latest
-    # ports: 8080:8080 18080:18080
     command: 'volume -max=15 -mserver=master:9333 -port=8080'
     networks:
       - internal
@@ -52,9 +36,6 @@ services:
   filer:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
     image: chrislusf/seaweedfs:latest
-    # ports:
-    # - 8888:8888
-    # - 18888:18888
     command: 'filer -master=master:9333'
     networks:
       - internal
@@ -63,6 +44,12 @@ services:
       - filer:/data
     deploy:
       replicas: 1
+      placement:
+        constraints:
+         - node.role == manager
+         # constrain to one specific node until we have a clustered filestore
+         - node.labels.${STACKDOMAIN:-loc.alho.st}-seaweedfs == true
+
       #mode: global
 
   s3:
