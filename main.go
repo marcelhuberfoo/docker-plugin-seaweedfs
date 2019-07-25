@@ -204,7 +204,23 @@ func (d *seaweedfsDriver) Unmount(r *volume.UnmountRequest) error {
 
 	if v.connections <= 0 {
 		//TODO: need to remove the 		"--name=seaweed-volume-plugin-"+v.Name, container
-
+		if _, err := runCmd(
+			"docker",
+			"exec",
+			"seaweed-volume-plugin-"+v.Name,
+			"umount",
+			v.Mountpoint,
+		); err != nil {
+			return err
+		}
+		if _, err := runCmd(
+			"docker",
+			"rm",
+			"-f",
+			"seaweed-volume-plugin-"+v.Name,
+		); err != nil {
+			return err
+		}
 		v.connections = 0
 	}
 
@@ -249,7 +265,12 @@ func (d *seaweedfsDriver) Capabilities() *volume.CapabilitiesResponse {
 }
 
 func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
-	cmd := exec.Command(
+	// TODO: need to do something with the options (uid mapping would rock)
+	// for _, option := range v.Options {
+	// 	cmd.Args = append(cmd.Args, "-o", option)
+	// }
+
+	output, err := runCmd(
 		"docker",
 		"run",
 		"--rm",
@@ -268,12 +289,6 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		"-filer.path="+v.Mountpoint,
 	)
 
-	// for _, option := range v.Options {
-	// 	cmd.Args = append(cmd.Args, "-o", option)
-	// }
-
-	logrus.Debug(cmd.Args)
-	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return logError("seaweedfs command execute failed: %v (%s)", err, output)
 	}
@@ -299,7 +314,7 @@ func getPluginDir() string {
 	}
 	// start a container with access to /var/lib/docker/plugins/ and search for that file in */rootfs/tmp
 	filename := strings.TrimPrefix(tmpfile.Name(), "/tmp/")
-	cmd := exec.Command(
+	output, err := runCmd(
 		"docker",
 		"run",
 		"--rm",
@@ -309,11 +324,8 @@ func getPluginDir() string {
 		"/var/lib/docker/plugins/",
 		"-name", filename,
 	)
-	// use it.
-	logrus.Debug(cmd.Args)
-	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logrus.Debugf("seaweedfs command execute failed: %v (%s)", err, output)
+		//logrus.Debugf("seaweedfs command execute failed: %v (%s)", err, output)
 		return ""
 	}
 	pluginDir := strings.TrimSpace(string(output))
@@ -325,6 +337,17 @@ func getPluginDir() string {
 func logError(format string, args ...interface{}) error {
 	logrus.Errorf(format, args...)
 	return fmt.Errorf(format, args...)
+}
+
+func runCmd(command string, args ...string) (string, error) {
+	cmd := exec.Command(command, args...)
+	logrus.Debug(cmd.Args)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logrus.Debugf("seaweedfs command execute failed: %v (%s)", err, output)
+		return "", err
+	}
+	return string(output), nil
 }
 
 func main() {

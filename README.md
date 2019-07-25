@@ -29,6 +29,12 @@ This will start
 * an s3 container that talks to the filer (untested by me)
 * and a global run-once service that will install the volume plugin on every node, ready to be used by other swarm stacks.
 
+To update the plugin on every node, you can run (you only need to do this once, it will go out to every node)
+
+```
+docker service update --force seaweedfs_docker-volume-plugin-run-once
+```
+
 #### manually, assuming you already have a seaweedfs swarm stack running
 
 ```
