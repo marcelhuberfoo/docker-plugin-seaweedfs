@@ -22,7 +22,7 @@ services:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
     image: chrislusf/seaweedfs:latest
     # ports: 9333:9333 19333:19333
-    command: "master -ip 0.0.0.0 -port 9333 " # -peers=localhost:9333,localhost:9334,localhost:9335"
+    command: "master -ip 0.0.0.0 -port 9333 -defaultReplication=000"
     networks:
       - internal
       #- infra_traefik
@@ -48,7 +48,6 @@ services:
       - data:/data
     deploy:
       mode: global
-      #replicas: 1
 
   filer:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
@@ -59,6 +58,12 @@ services:
     command: 'filer -master=master:9333'
     networks:
       - internal
+    # TODO: need to switch this to a clustered FileStore (at which point the deploy mode can be global)
+    volumes:
+      - filer:/data
+    deploy:
+      replicas: 1
+      #mode: global
 
   s3:
     image: chrislusf/seaweedfs:latest
@@ -71,7 +76,7 @@ services:
     image: docker:latest
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: "docker plugin install --alias seaweedfs --grant-all-permissions katharostech/seaweedfs-volume-plugin HOST=${STACKDOMAIN}:8888"
+    command: "docker plugin install --alias swarm --grant-all-permissions svendowideit/seaweedfs-volume-plugin:next DEBUG=true"
     deploy:
       mode: global
       restart_policy:
@@ -79,6 +84,7 @@ services:
 
 volumes:
   data:
+  filer:
 
 networks:
   internal:

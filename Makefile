@@ -22,16 +22,16 @@ rootfs:
 	@docker rm -vf tmp
 
 create:
-	@echo "### remove existing plugin ${PLUGIN_NAME}:${PLUGIN_TAG} if exists"
+	@echo "### remove existing plugin swarm if exists"
 	@docker volume rm -f test || true
-	@docker plugin rm -f ${PLUGIN_NAME}:${PLUGIN_TAG} || true
-	@echo "### create new plugin ${PLUGIN_NAME}:${PLUGIN_TAG} from ./plugin"
-	@docker plugin create ${PLUGIN_NAME}:${PLUGIN_TAG} ./plugin
-	@docker plugin set ${PLUGIN_NAME}:${PLUGIN_TAG} DEBUG=true
+	@docker plugin rm -f swarm || true
+	@echo "### create new plugin swarm from ./plugin"
+	@docker plugin create swarm ./plugin
+	@docker plugin set swarm DEBUG=true
 
 enable:		
-	@echo "### enable plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"		
-	@docker plugin enable ${PLUGIN_NAME}:${PLUGIN_TAG}
+	@echo "### enable plugin swarm"		
+	@docker plugin enable swarm
 
 ps:
 	@ps -U root -u | grep docker-plugin-seaweedf
@@ -40,7 +40,7 @@ enter:
 	@sudo nsenter --target $(shell ps -U root -u | grep docker-plugin-seaweedf | xargs | cut -f2 -d" ") --mount --uts --ipc --net --pid sh
 
 sven:
-	@docker volume create -d $(shell docker plugin ls --format={{.ID}}) test
+	@docker volume create -d swarm test
 	@docker run --rm -it -v test:/test debian
 
 mountall:

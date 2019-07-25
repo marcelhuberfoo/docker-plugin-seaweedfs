@@ -295,7 +295,10 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 }
 
 func getPluginDir() string {
-	// TODO: this can't work - how do i work out which plugin this one is?
+	// write a unique filename to /tmp
+	// start a container with access to /var/lib/docker/plugins/ and search for that file in */rootfs/tmp
+	// use it.
+
 	cmd := exec.Command("docker", "plugin", "ls", "--no-trunc", "--format={{.ID}}")
 	logrus.Debug(cmd.Args)
 	output, err := cmd.CombinedOutput()
