@@ -11,6 +11,9 @@ endif
 
 all: clean rootfs create enable
 
+build:
+	go build --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}" .
+
 clean:
 	@echo "### rm ./plugin"
 	@rm -rf ./plugin
@@ -19,7 +22,7 @@ rootfs:
 	@echo "### docker build: rootfs image with ${PLUGIN_NAME}-rootfs (${RELEASE_DATE}) ${COMMIT_HASH}${DIRTY}"
 	@echo "${GITSTATUS}"
 	@docker build --target builder -t ${PLUGIN_NAME}-rootfs:build-${PLUGIN_TAG} --build-arg "RELEASE_DATE=${RELEASE_DATE}" --build-arg "COMMIT_HASH=${COMMIT_HASH}" --build-arg "DIRTY=${DIRTY}" .
-	@docker build -t ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG} .
+	@docker build -t ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG} --build-arg "RELEASE_DATE=${RELEASE_DATE}" --build-arg "COMMIT_HASH=${COMMIT_HASH}" --build-arg "DIRTY=${DIRTY}" .
 	@echo "### create rootfs directory in ./plugin/rootfs"
 	@mkdir -p ./plugin/rootfs
 	@docker create --name tmp ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG}

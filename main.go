@@ -397,6 +397,7 @@ func main() {
 	if ok, _ := strconv.ParseBool(debug); ok {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
+	logrus.Infof("version %s, build %s\n", Version, CommitHash)
 
 	d, err := newseaweedfsDriver("/mnt")
 	if err != nil {
