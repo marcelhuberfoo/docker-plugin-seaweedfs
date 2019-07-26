@@ -337,8 +337,12 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 	return nil
 }
 
+var pluginDir = ""
+
 func getPluginDir() string {
-	// TODO: store this, but verify - as it could change any time... (and if it does, that's a signal to re-run the mount)
+	if pluginDir != "" {
+		return pluginDir
+	}
 	// write a unique filename to /tmp
 	content := []byte("temporary file's content")
 	tmpfile, err := ioutil.TempFile("/tmp", "example")
@@ -370,7 +374,7 @@ func getPluginDir() string {
 		//logrus.Debugf("seaweedfs command execute failed: %v (%s)", err, output)
 		return ""
 	}
-	pluginDir := strings.TrimSpace(string(output))
+	pluginDir = strings.TrimSpace(string(output))
 	pluginDir = strings.TrimSuffix(pluginDir, "/rootfs"+tmpfile.Name())
 	logrus.Debug(pluginDir)
 	return pluginDir
