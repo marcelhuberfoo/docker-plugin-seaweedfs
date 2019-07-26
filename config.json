@@ -1,11 +1,16 @@
 {
-  "description": "A Docker volume plugin for SeaweedFS",
+  "description": "A Docker Volume plugin creating swarm-wide volumes",
   "documentation": "https://docs.docker.com/engine/extend/config/",
   "workdir": "/",
   "entrypoint": [
     "/docker-plugin-seaweedfs"
   ],
   "env": [
+    {
+      "name": "VERSION",
+      "settable": null,
+      "description": "docker-plugin-seaweedfs: ${RELEASE_DATE} ${COMMIT_HASH}${DIRTY}"
+    },
     {
       "name": "HOST",
       "settable": [

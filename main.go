@@ -19,6 +19,12 @@ import (
 
 const socketAddress = "/run/docker/plugins/seaweedfs.sock"
 
+// Version is set from the go build commandline
+var Version string
+
+// CommitHash is set from the go build commandline
+var CommitHash string
+
 type seaweedfsVolume struct {
 	Options []string
 
@@ -245,7 +251,7 @@ func (d *seaweedfsDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error)
 
 // List of volumes registered with the plugin.
 func (d *seaweedfsDriver) List() (*volume.ListResponse, error) {
-	logrus.WithField("method", "list").Debugf("")
+	logrus.WithField("method", "list").Debugf("version %s, build %s\n", Version, CommitHash)
 
 	d.Lock()
 	defer d.Unlock()
@@ -260,7 +266,7 @@ func (d *seaweedfsDriver) List() (*volume.ListResponse, error) {
 // Get the list of capabilities the driver supports.
 // The driver is not required to implement Capabilities. If it is not implemented, the default values are used.
 func (d *seaweedfsDriver) Capabilities() *volume.CapabilitiesResponse {
-	logrus.WithField("method", "capabilities").Debugf("")
+	logrus.WithField("method", "capabilities").Debugf("version %s, build %s\n", Version, CommitHash)
 
 	return &volume.CapabilitiesResponse{Capabilities: volume.Capability{Scope: "local"}}
 }

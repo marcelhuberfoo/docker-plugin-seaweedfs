@@ -2,6 +2,13 @@ PREFIX = svendowideit/seaweedfs-volume
 PLUGIN_NAME = ${PREFIX}-plugin
 PLUGIN_TAG ?= next
 
+RELEASE_DATE=$(shell date +%F)
+COMMIT_HASH=$(shell git rev-parse --short HEAD 2>/dev/null)
+GITSTATUS=$(shell git status --porcelain --untracked-files=no)
+ifneq ($(GITSTATUS),)
+  DIRTY=-dirty
+endif
+
 all: clean rootfs create enable
 
 clean:
@@ -9,16 +16,16 @@ clean:
 	@rm -rf ./plugin
 
 rootfs:
-	@echo "### docker build: rootfs image with ${PLUGIN_NAME}-rootfs"
-	@docker build --target builder -t ${PLUGIN_NAME}-rootfs:build-${PLUGIN_TAG} .
-
+	@echo "### docker build: rootfs image with ${PLUGIN_NAME}-rootfs (${RELEASE_DATE}) ${COMMIT_HASH}${DIRTY}"
+	@echo "${GITSTATUS}"
+	@docker build --target builder -t ${PLUGIN_NAME}-rootfs:build-${PLUGIN_TAG} --build-arg "RELEASE_DATE=${RELEASE_DATE}" --build-arg "COMMIT_HASH=${COMMIT_HASH}" --build-arg "DIRTY=${DIRTY}" .
 	@docker build -t ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG} .
 	@echo "### create rootfs directory in ./plugin/rootfs"
 	@mkdir -p ./plugin/rootfs
 	@docker create --name tmp ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG}
 	@docker export tmp | tar -x -C ./plugin/rootfs
-	@echo "### copy config.json to ./plugin/"
-	@cp config.json ./plugin/
+	@echo "### add version into to config.json and stage into ./plugin/"
+	@RELEASE_DATE=${RELEASE_DATE} COMMIT_HASH=${COMMIT_HASH} DIRTY=${DIRTY} envsubst > ./plugin/config.json < config.json
 	@docker rm -vf tmp
 
 create:
@@ -28,6 +35,11 @@ create:
 	@echo "### create new plugin swarm from ./plugin"
 	@docker plugin create swarm ./plugin
 	@docker plugin set swarm DEBUG=true
+	@echo "### create new plugin for pushing to Docker hub ${PLUGIN_NAME}:${PLUGIN_TAG} from ./plugin"
+	@docker plugin rm -f ${PLUGIN_NAME}:${PLUGIN_TAG} || true
+	@docker plugin create ${PLUGIN_NAME}:${PLUGIN_TAG} ./plugin
+
+
 
 enable:		
 	@echo "### enable plugin swarm"		

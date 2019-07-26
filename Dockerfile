@@ -1,12 +1,18 @@
 FROM golang:1.12-alpine as builder
+
 WORKDIR /src
 RUN set -ex \
     && apk add --no-cache --virtual .build-deps \
     gcc libc-dev git
 
+ARG RELEASE_DATE
+ARG COMMIT_HASH
+ARG DIRTY
+
 COPY . /src
 RUN set -ex \
-    && go install --ldflags '-extldflags "-static"'
+    && echo --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}" \
+    && go install --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}"
 
 RUN set -ex \
     && apk del .build-deps
