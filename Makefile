@@ -55,9 +55,16 @@ enter:
 	@sudo nsenter --target $(shell ps -U root -u | grep docker-plugin-seaweedf | xargs | cut -f2 -d" ") --mount --uts --ipc --net --pid sh
 
 sven:
-	@docker volume rm -f test | true
-	@docker volume create -d swarm -o uid=39 -o gid=65534 -o umask=0345 test
-	@docker run --rm -it -v test:/test debian ls -al | grep test
+	@docker volume rm -f test3 | true
+	@docker volume create -d swarm -o uid=33 -o gid=10 -o umask=0773 test3
+	@docker run -d --name tester -u 33  --rm -it -v test3:/test debian sh
+
+	@docker run --rm -it -v test3:/test debian ls -al | grep test
+	@docker run --rm -it -v test3:/test debian bash -c "mktemp -p /test/"
+	@docker run --rm -it -u 33 -v test3:/test debian bash -c "mktemp -p /test/"
+	@docker run --rm -it -v test3:/test debian ls -al /test/
+
+	@docker kill tester
 
 mountall:
 	@docker run --rm -it --net=seaweedfs_internal --cap-add=SYS_ADMIN --device=/dev/fuse:/dev/fuse --security-opt=apparmor:unconfined --entrypoint=weed svendowideit/seaweedfs-volume-plugin-rootfs:next mount -filer=filer:8888 -dir=/mnt -filer.path=/

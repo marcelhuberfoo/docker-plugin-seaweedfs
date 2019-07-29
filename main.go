@@ -214,6 +214,7 @@ func (d *seaweedfsDriver) Unmount(r *volume.UnmountRequest) error {
 		if _, err := runCmd(
 			"docker",
 			"exec",
+			"--user", "0",
 			"seaweed-volume-plugin-"+v.Name,
 			"umount",
 			v.Mountpoint,
@@ -293,6 +294,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		}
 		logrus.Debugf("option: (%s)", option)
 	}
+	uid, gid := 0, 0
 	if userOpt != "" {
 		logrus.Debugf("userOpt: (%s)", userOpt)
 		u, err := user.Lookup(userOpt)
@@ -308,7 +310,6 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 			}
 		}
 
-		uid, gid := 0, 0
 		logrus.Debugf("u: (%#v)", u)
 		if parsedId, pe := strconv.ParseUint(user, 10, 32); pe == nil {
 			uid = int(parsedId)
@@ -326,6 +327,9 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 			logrus.Debugf("chmod(%s, %#o)", v.Mountpoint, mode)
 
 			os.Chmod(v.Mountpoint, mode)
+
+			fi, _ := os.Lstat(v.Mountpoint)
+			logrus.Debugf("mode(%s): %v\n", fi.Mode(), v.Mountpoint)
 		}
 	}
 
@@ -334,6 +338,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		"run",
 		"--rm",
 		"-d",
+		"--user", fmt.Sprintf("%d", uid),
 		"--name=seaweed-volume-plugin-"+v.Name,
 		"--net=seaweedfs_internal",
 		"--mount", "type=bind,src="+getPluginDir()+"/propagated-mount/,dst=/mnt/docker-volumes/,bind-propagation=rshared",
