@@ -48,4 +48,4 @@ RUN echo "user_allow_other" >> /etc/fuse.conf
 RUN mkdir -p /run/docker/plugins /mnt/state /mnt/volumes
 
 COPY --from=builder /go/bin/docker-plugin-seaweedfs .
-CMD ["docker-plugin-seaweedfs"]
+CMD ["/docker-plugin-seaweedfs"]
