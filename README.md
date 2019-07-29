@@ -62,6 +62,23 @@ date.txt  etc
 # 
 ```
 
+## Mount options.
+
+`mount.fuse` implements a number of options (see https://manpages.debian.org/testing/fuse/mount.fuse.8.en.html )
+
+So far, this plugin supports only `uid`, `gid` and `umask`:
+
+```
+volumes:
+  test:
+    driver: swarm
+    driver_opts:
+      uid: 65534 #nobody - allow nginx running as nobody to read the files
+      gid: 33 #www-data
+      umask: 775
+    name: "{{.Node.Hostname}}_{{.Service.Name}}"
+```
+
 ## How it works.
 
 The Plugin bindmounts in the host's Docker socket and `/var/lib/docker/plugins` dir. It uses this to work out what its called, and where it is supposed to mount files to. This allows the plugin to create intermediate containers that can access the seaweedfs_internal network to talk to the seaweedfs filer and volume services.

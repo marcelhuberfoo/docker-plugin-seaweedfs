@@ -279,35 +279,53 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 
 	// TODO: to make a mount available to a different user
 	os.MkdirAll(v.Mountpoint, 0777)
+	var userOpt, gidOpt, uMask string
 	for _, option := range v.Options {
 		//cmd.Args = append(cmd.Args, "-o", option)
-		userOpt := ""
 		if strings.HasPrefix(option, "uid=") {
 			userOpt = strings.TrimPrefix(option, "uid=")
 		}
-		if strings.HasPrefix(option, "user=") {
-			userOpt = strings.TrimPrefix(option, "user=")
+		if strings.HasPrefix(option, "gid=") {
+			gidOpt = strings.TrimPrefix(option, "gid=")
+		}
+		if strings.HasPrefix(option, "umask=") {
+			uMask = strings.TrimPrefix(option, "umask=")
 		}
 		logrus.Debugf("option: (%s)", option)
-		if userOpt != "" {
-			logrus.Debugf("userOpt: (%s)", userOpt)
-			u, err := user.Lookup(userOpt)
-			if err != nil {
-				u, err = user.LookupId(userOpt)
+	}
+	if userOpt != "" {
+		logrus.Debugf("userOpt: (%s)", userOpt)
+		u, err := user.Lookup(userOpt)
+		if err != nil {
+			u, err = user.LookupId(userOpt)
+		}
+		user := userOpt
+		group := gidOpt
+		if err == nil && u != nil {
+			user = u.Uid
+			if group != "" {
+				group = u.Gid
 			}
-			uid, gid := 0, 0
-			if err == nil && u != nil {
-				logrus.Debugf("u: (%#v)", u)
-				if parsedId, pe := strconv.ParseUint(u.Uid, 10, 32); pe == nil {
-					uid = int(parsedId)
-				}
-				if parsedId, pe := strconv.ParseUint(u.Gid, 10, 32); pe == nil {
-					gid = int(parsedId)
-				}
-				logrus.Debugf("chown: (%s, %d, %d)", v.Mountpoint+"_sven", uid, gid)
-				os.Chown(v.Mountpoint, uid, gid)
-				os.Chmod(v.Mountpoint, 0777)
-			}
+		}
+
+		uid, gid := 0, 0
+		logrus.Debugf("u: (%#v)", u)
+		if parsedId, pe := strconv.ParseUint(user, 10, 32); pe == nil {
+			uid = int(parsedId)
+		}
+		if parsedId, pe := strconv.ParseUint(group, 10, 32); pe == nil {
+			gid = int(parsedId)
+		}
+		logrus.Debugf("chown: (%s, %d, %d)", v.Mountpoint, uid, gid)
+		os.Chown(v.Mountpoint, uid, gid)
+
+	}
+	if uMask != "" {
+		if parsedId, pe := strconv.ParseUint(uMask, 8, 32); pe == nil {
+			mode := os.FileMode(parsedId)
+			logrus.Debugf("chmod(%s, %#o)", v.Mountpoint, mode)
+
+			os.Chmod(v.Mountpoint, mode)
 		}
 	}
 
