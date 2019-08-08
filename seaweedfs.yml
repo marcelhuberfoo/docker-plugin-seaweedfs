@@ -49,6 +49,7 @@ services:
 
   # TODO: figure out how to handle a swarm where the number of managers has been reduced...
   etcd:
+    hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
     image: appcelerator/etcd:latest
     volumes:
       - etcd:/data
