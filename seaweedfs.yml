@@ -3,7 +3,7 @@
 # docker run --rm -it --name seaweedfs_test --net seaweedfs_internal --cap-add SYS_ADMIN --device=/dev/fuse:/dev/fuse --security-opt=apparmor:unconfined --entrypoint sh chrislusf/seaweedfs:1.41
 # / # apk --no-cache add fuse
 # / # weed mount -filer=filer:8888 -dir=/mnt -filer.path=/
-# then docker exec into that container, as fise will be running in the foreground...
+# then docker exec into that container, as fuse will be running in the foreground...
 # docker exec -it seaweedfs_test sh
 # / # cd /mnt
 # /mnt # cp -r /var .
@@ -15,7 +15,8 @@ version: "3.6"
 services:
   master:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
-    image: chrislusf/seaweedfs:latest
+    image: svendowideit/seaweedfs:latest
+    #image: chrislusf/seaweedfs:latest
     command: "master -ip 0.0.0.0 -port 9333 -defaultReplication=000"
     networks:
       - internal
@@ -24,7 +25,8 @@ services:
 
   volume:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
-    image: chrislusf/seaweedfs:latest
+    image: svendowideit/seaweedfs:latest
+    #image: chrislusf/seaweedfs:latest
     command: 'volume -max=15 -mserver=master:9333 -port=8080'
     networks:
       - internal
@@ -35,25 +37,35 @@ services:
 
   filer:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
-    image: chrislusf/seaweedfs:latest
+    image: svendowideit/seaweedfs:latest  # custom build from git source to get etcd
+    #image: chrislusf/seaweedfs:latest
     command: 'filer -master=master:9333'
     networks:
       - internal
-    # TODO: need to switch this to a clustered FileStore (at which point the deploy mode can be global)
     volumes:
       - filer:/data
     deploy:
-      replicas: 1
+      mode: global
+
+  # TODO: figure out how to handle a swarm where the number of managers has been reduced...
+  etcd:
+    image: appcelerator/etcd:latest
+    volumes:
+      - etcd:/data
+    networks:
+      - internal
+    environment:
+      SERVICE_NAME: "etcd"
+      MIN_SEEDS_COUNT: 1
+    deploy:
+      mode: global
       placement:
         constraints:
          - node.role == manager
-         # constrain to one specific node until we have a clustered filestore
-         - node.labels.${STACKDOMAIN:-loc.alho.st}-seaweedfs == true
-
-      #mode: global
 
   s3:
-    image: chrislusf/seaweedfs:latest
+    image: svendowideit/seaweedfs:latest
+    #image: chrislusf/seaweedfs:latest
     # ports:
     # - 8333:8333
     command: 's3 -filer=filer:8888'
@@ -73,6 +85,7 @@ services:
 volumes:
   data:
   filer:
+  etcd:
 
 networks:
   internal:
