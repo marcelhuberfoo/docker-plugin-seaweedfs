@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,7 +13,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/sirupsen/logrus"
 )
@@ -210,26 +216,71 @@ func (d *seaweedfsDriver) Unmount(r *volume.UnmountRequest) error {
 	v.connections--
 
 	if v.connections <= 0 {
-		//TODO: need to remove the 		"--name=seaweed-volume-plugin-"+v.Name, container
-		if _, err := runCmd(
-			"docker",
-			"exec",
-			"--user", "0",
-			"seaweed-volume-plugin-"+v.Name,
-			"umount",
-			v.Mountpoint,
-		); err != nil {
-			return err
-		}
-		if _, err := runCmd(
-			"docker",
-			"rm",
-			"-f",
-			"seaweed-volume-plugin-"+v.Name,
-		); err != nil {
-			return err
-		}
 		v.connections = 0
+
+		ctx := context.Background()
+		cli, err := GetDockerClient(ctx, "")
+		if err != nil {
+			return err
+		}
+
+		volumeContainer := "seaweed-volume-plugin-" + v.Name
+		logrus.Debugf("Unmount(%s) requested", v.Mountpoint)
+
+		execID, err := cli.ContainerExecCreate(ctx,
+			volumeContainer,
+			types.ExecConfig{
+				User:         "0",
+				Privileged:   false,
+				Tty:          false,
+				AttachStdin:  false,
+				AttachStderr: true,
+				AttachStdout: true,
+				Detach:       false,
+				DetachKeys:   "",
+				Env:          []string{},
+				Cmd:          []string{"umount", v.Mountpoint},
+			},
+		)
+		if err != nil {
+			logError("Unmount ExecCreate: %s", err)
+		} else {
+			resp, err := cli.ContainerExecAttach(ctx,
+				execID.ID,
+				types.ExecStartCheck{
+					Detach: false,
+					Tty:    false,
+				},
+			)
+			if err != nil {
+				logError("Unmount ExecAttach: %s", err)
+			} else {
+				//read with timeout, and if its hung, kill it with fire
+				resp.Conn.SetDeadline(time.Now().Add(time.Second * 5))
+				b, err := ioutil.ReadAll(resp.Reader)
+				logrus.Debugf("unmount(%s): (Err: %s ) Output: %s", v.Mountpoint, err, b)
+				if err != nil {
+					logError("Unmount ReadAttach: %s", err)
+				}
+			}
+		}
+
+		stats, err := cli.ContainerInspect(ctx, volumeContainer)
+		if err != nil {
+			return logError("Unmount ContainerInspect: %s", err)
+		}
+		logrus.Debugf("ContainerInspect: %#v", stats)
+
+		if err := cli.ContainerRemove(ctx,
+			volumeContainer,
+			types.ContainerRemoveOptions{
+				RemoveVolumes: true,
+				RemoveLinks:   true,
+				Force:         true,
+			},
+		); err != nil {
+			return logError("Unmount ContainerRemove: %s", err)
+		}
 	}
 
 	return nil
@@ -333,30 +384,81 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		}
 	}
 
-	output, err := runCmd(
-		"docker",
-		"run",
-		"--rm",
-		"-d",
-		"--user", fmt.Sprintf("%d", uid),
-		"--name=seaweed-volume-plugin-"+v.Name,
-		"--net=seaweedfs_internal",
-		"--mount", "type=bind,src="+getPluginDir()+"/propagated-mount/,dst=/mnt/docker-volumes/,bind-propagation=rshared",
-		"--cap-add=SYS_ADMIN",
-		"--device=/dev/fuse:/dev/fuse",
-		"--security-opt=apparmor:unconfined",
-		"--entrypoint=weed",
-		"svendowideit/seaweedfs-volume-plugin-rootfs:next", // TODO: need to figure this out dynamically
-		"-v", "2",
-		"mount",
-		"-filer=filer:8888",
-		"-dir="+v.Mountpoint,
-		"-filer.path="+v.Mountpoint,
-	)
+	// output, err := runCmd(
+	// 	"docker",
+	// 	"run",
+	// 	"--rm",
+	// 	"-d",
+	// 	"--user", fmt.Sprintf("%d", uid),
+	// 	"--name=seaweed-volume-plugin-"+v.Name,
+	// 	"--net=seaweedfs_internal",
+	// 	"--mount", "type=bind,src="+getPluginDir()+"/propagated-mount/,dst=/mnt/docker-volumes/,bind-propagation=rshared",
+	// 	"--cap-add=SYS_ADMIN",
+	// 	"--device=/dev/fuse:/dev/fuse",
+	// 	"--security-opt=apparmor:unconfined",
+	// 	"--entrypoint=weed",
+	// 	"svendowideit/seaweedfs-volume-plugin-rootfs:next", // TODO: need to figure this out dynamically
+	// 	"-v", "2",
+	// 	"mount",
+	// 	"-filer=filer:8888",
+	// 	"-dir="+v.Mountpoint,
+	// 	"-filer.path="+v.Mountpoint,
+	// )
 
+	// TODO: what should we do if there already is one - atm, the output to the user "ok"
+	// the error maybe should be to tell them there is somethign wrong, and they might be able to fix it
+	// if they force kill the plugin-vol (so long as its not yet in use?) - and then remove the mount point, and ???
+	// OR if the settings are right, we could just reuse it?
+
+	_, err := runContainer(
+		&container.Config{
+			Image:      "svendowideit/seaweedfs-volume-plugin-rootfs:next",
+			User:       fmt.Sprintf("%d", uid),
+			Entrypoint: []string{"weed"},
+			Cmd: []string{
+				"-v", "2",
+				"mount",
+				"-filer=filer:8888",
+				"-dir=" + v.Mountpoint,
+				"-filer.path=" + v.Mountpoint,
+			},
+		},
+		&container.HostConfig{
+			AutoRemove: true,
+			//Priviledged: true,
+			CapAdd: []string{"SYS_ADMIN"},
+			Resources: container.Resources{
+				Devices: []container.DeviceMapping{container.DeviceMapping{
+					PathOnHost:        "/dev/fuse",
+					PathInContainer:   "/dev/fuse",
+					CgroupPermissions: "rwm",	// needs Cap=SYS_ADMIN
+				}},
+			},
+			Mounts: []mount.Mount{
+				{
+					Type:     mount.TypeBind,
+					Source:   getPluginDir() + "/propagated-mount/",
+					Target:   "/mnt/docker-volumes/",
+					ReadOnly: false,
+					BindOptions: &mount.BindOptions{
+						Propagation:  mount.PropagationRShared,
+						NonRecursive: false,
+					},
+				}},
+			SecurityOpt: []string{"apparmor=unconfined"},
+		},
+		&network.NetworkingConfig{
+			EndpointsConfig: map[string]*network.EndpointSettings{
+				"seaweedfs_internal": {},
+			},
+		},
+		"seaweed-volume-plugin-"+v.Name,
+	)
 	if err != nil {
-		return logError("seaweedfs command execute failed: %v (%s)", err, output)
+		return logError("Error runing Container: %s", err)
 	}
+	// TODO: test that we have actually mounted
+
 	return nil
 }
 
@@ -383,21 +485,77 @@ func getPluginDir() string {
 	}
 	// start a container with access to /var/lib/docker/plugins/ and search for that file in */rootfs/tmp
 	filename := strings.TrimPrefix(tmpfile.Name(), "/tmp/")
-	output, err := runCmd(
-		"docker",
-		"run",
-		"--rm",
-		"-v=/var/lib/docker/plugins/:/var/lib/docker/plugins/",
-		"--entrypoint=find",
-		"svendowideit/seaweedfs-volume-plugin-rootfs:next", // TODO: need to figure this out dynamically
-		"/var/lib/docker/plugins/",
-		"-name", filename,
+
+	containerID, err := runContainer(
+		&container.Config{
+			Image:      "svendowideit/seaweedfs-volume-plugin-rootfs:next",
+			Entrypoint: []string{"find"},
+			Cmd:        []string{"/var/lib/docker/plugins/", "-name", filename},
+		},
+		&container.HostConfig{
+			Mounts: []mount.Mount{
+				{
+					Type:   mount.TypeBind,
+					Source: "/var/lib/docker/plugins/",
+					Target: "/var/lib/docker/plugins/",
+				}},
+		},
+		&network.NetworkingConfig{},
+		"",
 	)
 	if err != nil {
-		//logrus.Debugf("seaweedfs command execute failed: %v (%s)", err, output)
+		logError("Error runing Container: %s", err)
 		return ""
 	}
+
+	// TODO: it'd be nice not to need this more than once
+	ctx := context.Background()
+	cli, err := GetDockerClient(ctx, "")
+	if err != nil {
+		logError("Error getting Docker client: %s", err)
+		return ""
+	}
+	defer func() {
+		if err := cli.ContainerRemove(ctx,
+			containerID,
+			types.ContainerRemoveOptions{
+				RemoveVolumes: true,
+				RemoveLinks:   true,
+				Force:         true,
+			},
+		); err != nil {
+			logError("finPlugin dir ContainerRemove: %s", err)
+		}
+	}()
+
+	statusCh, errCh := cli.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			logError("Error waiting for Container: %s", err)
+			return ""
+		}
+	case <-statusCh:
+	}
+
+	out, err := cli.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{ShowStdout: true})
+	if err != nil {
+		logError("Error creating Container: %s", err)
+		return ""
+	}
+	//stdcopy.StdCopy(os.Stdout, os.Stderr, out)
+	output, err := ioutil.ReadAll(out)
+	logrus.Debugf("Find file (%s): (Err: %s ) Output: %s", filename, err, output)
+	// TODO: find out why there's leading unicode in output..
+	// ' \\x01\\x00\\x00\\x00\\x00\\x00\\x00u/var/lib/docker/plug....'
+	if err != nil {
+		logError("FindFile: %s", err)
+		return ""
+	}
+
 	pluginDir = strings.TrimSpace(string(output))
+	// remove the leading unicode
+	pluginDir = pluginDir[strings.Index(pluginDir, "/var/lib/docker/plugins/"):]
 	pluginDir = strings.TrimSuffix(pluginDir, "/rootfs"+tmpfile.Name())
 	logrus.Debug(pluginDir)
 	return pluginDir
