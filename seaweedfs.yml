@@ -15,8 +15,7 @@ version: "3.6"
 services:
   master:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
-    image: svendowideit/seaweedfs:latest
-    #image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:latest
     command: "master -ip 0.0.0.0 -port 9333 -defaultReplication=000"
     networks:
       - internal
@@ -25,8 +24,7 @@ services:
 
   volume:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
-    image: svendowideit/seaweedfs:latest
-    #image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:latest
     command: 'volume -max=15 -mserver=master:9333 -port=8080'
     networks:
       - internal
@@ -37,17 +35,15 @@ services:
 
   filer:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
-    image: svendowideit/seaweedfs:latest  # custom build from git source to get etcd
-    #image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:latest
     command: 'filer -master=master:9333'
     networks:
       - internal
-    volumes:
-      - filer:/data
     deploy:
       mode: global
 
   # TODO: figure out how to handle a swarm where the number of managers has been reduced...
+  # this is a --force-new-cluster event, so probably just needs disaster recovery docs
   etcd:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
     image: appcelerator/etcd:latest
@@ -65,8 +61,7 @@ services:
          - node.role == manager
 
   s3:
-    image: svendowideit/seaweedfs:latest
-    #image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:latest
     # ports:
     # - 8333:8333
     command: 's3 -filer=filer:8888'
@@ -85,13 +80,8 @@ services:
 
 volumes:
   data:
-  filer:
   etcd:
 
 networks:
   internal:
     attachable: true
-    # external:
-    #   name: host
-  # infra_traefik:
-  #   external: true
