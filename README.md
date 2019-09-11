@@ -1,6 +1,6 @@
 # SeaweedFS Docker Plugin
 
-This is stupendously experimental. I'm doing all sorts of not-recomended things to break out of Docker's attempts at confining plugins.
+This is stupendously experimental. I'm doing all sorts of not-recommended things to break out of Docker's attempts at confining plugins.
 
 
 ## Usage

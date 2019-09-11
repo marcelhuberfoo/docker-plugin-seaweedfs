@@ -155,7 +155,7 @@ func (d *seaweedfsDriver) Path(r *volume.PathRequest) (*volume.PathResponse, err
 		return &volume.PathResponse{}, logError("volume %s not found", r.Name)
 	}
 
-	return &volume.PathResponse{Mountpoint: v.Mountpoint}, nil
+	return &volume.PathResponse{Mountpoint: filepath.Join(v.Mountpoint, "_data")}, nil
 }
 
 // Mount is called once per container start.
@@ -196,7 +196,7 @@ func (d *seaweedfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, 
 
 	v.connections++
 
-	return &volume.MountResponse{Mountpoint: v.Mountpoint}, nil
+	return &volume.MountResponse{Mountpoint: filepath.Join(v.Mountpoint, "_data")}, nil
 }
 
 // Docker is no longer using the named volume.
@@ -298,7 +298,7 @@ func (d *seaweedfsDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error)
 		return &volume.GetResponse{}, logError("volume %s not found", r.Name)
 	}
 
-	return &volume.GetResponse{Volume: &volume.Volume{Name: r.Name, Mountpoint: v.Mountpoint}}, nil
+	return &volume.GetResponse{Volume: &volume.Volume{Name: r.Name, Mountpoint: filepath.Join(v.Mountpoint, "_data")}}, nil
 }
 
 // List of volumes registered with the plugin.
@@ -310,7 +310,7 @@ func (d *seaweedfsDriver) List() (*volume.ListResponse, error) {
 
 	var vols []*volume.Volume
 	for name, v := range d.volumes {
-		vols = append(vols, &volume.Volume{Name: name, Mountpoint: v.Mountpoint})
+		vols = append(vols, &volume.Volume{Name: name, Mountpoint: filepath.Join(v.Mountpoint, "_data")})
 	}
 	return &volume.ListResponse{Volumes: vols}, nil
 }
@@ -372,9 +372,11 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		os.Chown(v.Mountpoint, uid, gid)
 
 	}
+	fi, _ := os.Lstat(v.Mountpoint)
+	mode := fi.Mode()
 	if uMask != "" {
 		if parsedId, pe := strconv.ParseUint(uMask, 8, 32); pe == nil {
-			mode := os.FileMode(parsedId)
+			mode = os.FileMode(parsedId)
 			logrus.Debugf("chmod(%s, %#o)", v.Mountpoint, mode)
 
 			os.Chmod(v.Mountpoint, mode)
@@ -431,7 +433,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 				Devices: []container.DeviceMapping{container.DeviceMapping{
 					PathOnHost:        "/dev/fuse",
 					PathInContainer:   "/dev/fuse",
-					CgroupPermissions: "rwm",	// needs Cap=SYS_ADMIN
+					CgroupPermissions: "rwm", // needs Cap=SYS_ADMIN
 				}},
 			},
 			Mounts: []mount.Mount{
@@ -458,6 +460,10 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		return logError("Error runing Container: %s", err)
 	}
 	// TODO: test that we have actually mounted
+
+	dataDir := filepath.Join(v.Mountpoint, "_data")
+	os.MkdirAll(dataDir, mode)
+	os.Chown(dataDir, uid, gid)
 
 	return nil
 }

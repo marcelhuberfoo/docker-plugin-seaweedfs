@@ -1,3 +1,5 @@
+.PHONY: all build clean rootfs create enable ps enter test mountall logs push
+
 PREFIX = svendowideit/seaweedfs-volume
 PLUGIN_NAME = ${PREFIX}-plugin
 PLUGIN_TAG ?= next
@@ -9,7 +11,7 @@ ifneq ($(GITSTATUS),)
   DIRTY=-dirty
 endif
 
-all: clean rootfs create enable
+all: clean rootfs create enable test
 
 build:
 	go build --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}" .
@@ -33,20 +35,17 @@ rootfs:
 
 create:
 	@echo "### remove existing plugin swarm if exists"
-	@docker volume rm -f test || true
-	@docker plugin rm -f swarm || true
-	@echo "### create new plugin swarm from ./plugin"
-	@docker plugin create swarm ./plugin
-	@docker plugin set swarm DEBUG=true
-	@echo "### create new plugin for pushing to Docker hub ${PLUGIN_NAME}:${PLUGIN_TAG} from ./plugin"
+	@docker volume rm -f test4 || true
 	@docker plugin rm -f ${PLUGIN_NAME}:${PLUGIN_TAG} || true
+	@echo "### create new plugin for pushing to Docker hub ${PLUGIN_NAME}:${PLUGIN_TAG} from ./plugin"
 	@docker plugin create ${PLUGIN_NAME}:${PLUGIN_TAG} ./plugin
+	@docker plugin set ${PLUGIN_NAME}:${PLUGIN_TAG} DEBUG=true
 
-
+#TODO: add an "ensure seaweedfs stack is up and running step that is used by "make all"
 
 enable:		
-	@echo "### enable plugin swarm"		
-	@docker plugin enable swarm
+	@echo "### enable plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"
+	@docker plugin enable ${PLUGIN_NAME}:${PLUGIN_TAG}
 
 ps:
 	@ps -U root -u | grep docker-plugin-seaweedf
@@ -54,28 +53,36 @@ ps:
 enter:
 	@sudo nsenter --target $(shell ps -U root -u | grep docker-plugin-seaweedf | xargs | cut -f2 -d" ") --mount --uts --ipc --net --pid sh
 
-sven:
+mk-test-mount:
+	@docker volume create -d ${PLUGIN_NAME}:${PLUGIN_TAG} -o uid=33 -o gid=10 -o umask=0773 test4
+
+test:
 	@docker kill tester | true
-	@docker volume rm -f test3 | true
+	@docker volume rm -f test4 | true
 	@sleep 1
 
-	@docker volume create -d swarm -o uid=33 -o gid=10 -o umask=0773 test3
-	@docker run -d --name tester -u 33  --rm -it -v test3:/test debian sh
+	@docker volume create -d ${PLUGIN_NAME}:${PLUGIN_TAG} -o uid=33 -o gid=10 -o umask=0773 test4
+	@docker run -d --name tester -u 33  --rm -it -v test4:/test debian sh
 
-	@docker run --rm -it -v test3:/test debian ls -al | grep test
-	@docker run --rm -it -v test3:/test debian bash -c "mktemp -p /test/"
-	@docker run --rm -it -u 33 -v test3:/test debian bash -c "mktemp -p /test/"
-	@docker run --rm -it -v test3:/test debian ls -al /test/
+	@docker run --rm -it -v test4:/test debian ls -al | grep test
+	@docker run --rm -it -v test4:/test debian ls -al /test/
+	@docker run --rm -it -v test4:/test debian bash -c "mktemp -p /test/ -t tmp.root.XXXXX"
+	@docker run --rm -it -u 33 -v test4:/test debian bash -c 'chmod 600 $$(mktemp -p /test/ -t tmp.uid33.XXXXX)'
+
+	@docker run --rm -it -v test4:/test debian ls -al /test/
 
 	@echo "is the volume plugin mount container running:"
-	@docker ps | grep seaweed-volume | grep test3
+	@docker ps | grep seaweed-volume | grep test4
 
 	@docker kill tester
 
 	@echo "is the volume plugin mount container gone:"
-	@docker ps -a | grep seaweed-volume-proxy | grep test3 | true
+	@docker ps -a | grep seaweed-volume-proxy | grep test4 | true
 
-	@docker volume rm -f test3 | true
+	@docker volume rm -f test4 | true
+
+# TODO: need a test-clean that removes the dirs from seaweedfs
+# TODO: and some way to "start over" (atm, remove the seaweedfs stack, remove the volumes)
 
 
 mountall:
@@ -83,7 +90,7 @@ mountall:
 
 
 logs:
-	@sudo journalctl -fu docker | grep seaweedfs
+	@sudo journalctl -fu docker | grep $(shell docker plugin inspect --format "{{.Id}}" ${PLUGIN_NAME}:${PLUGIN_TAG})
 
 push:  clean rootfs create enable
 	@echo "### push plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"
