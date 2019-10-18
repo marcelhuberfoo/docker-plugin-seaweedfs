@@ -19,6 +19,8 @@ services:
     command: "master -ip 0.0.0.0 -port 9333 -defaultReplication=000"
     networks:
       - internal
+    volumes:
+      - data:/data
     deploy:
       replicas: 1
 
@@ -39,6 +41,8 @@ services:
     command: 'filer -master=master:9333'
     networks:
       - internal
+    volumes:
+      - data:/data
     deploy:
       mode: global
 
@@ -67,6 +71,8 @@ services:
     command: 's3 -filer=filer:8888'
     networks:
       - internal
+    volumes:
+      - data:/data
 
   docker-volume-plugin-run-once:
     image: docker:latest
