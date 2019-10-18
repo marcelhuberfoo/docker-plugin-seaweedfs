@@ -2,7 +2,7 @@
 
 PREFIX = svendowideit/seaweedfs-volume
 PLUGIN_NAME = ${PREFIX}-plugin
-PLUGIN_TAG ?= next
+PLUGIN_TAG ?= develop
 
 RELEASE_DATE=$(shell date +%F)
 COMMIT_HASH=$(shell git rev-parse --short HEAD 2>/dev/null)
@@ -51,7 +51,7 @@ ps:
 	@ps -U root -u | grep docker-plugin-seaweedf
 
 enter:
-	@sudo nsenter --target $(shell ps -U root -u | grep docker-plugin-seaweedf | xargs | cut -f2 -d" ") --mount --uts --ipc --net --pid sh
+	@sudo nsenter --target $(shell ps -U root -u | grep /docker-plugin-seaweedfs | xargs | cut -f2 -d" ") --mount --uts --ipc --net --pid sh
 
 mk-test-mount:
 	@docker volume create -d ${PLUGIN_NAME}:${PLUGIN_TAG} -o uid=33 -o gid=10 -o umask=0773 test4
@@ -86,7 +86,7 @@ test:
 
 
 mountall:
-	@docker run --rm -it --net=seaweedfs_internal --cap-add=SYS_ADMIN --device=/dev/fuse:/dev/fuse --security-opt=apparmor:unconfined --entrypoint=weed svendowideit/seaweedfs-volume-plugin-rootfs:next mount -filer=filer:8888 -dir=/mnt -filer.path=/
+	@docker run --rm -it --net=seaweedfs_internal --cap-add=SYS_ADMIN --device=/dev/fuse:/dev/fuse --security-opt=apparmor:unconfined --entrypoint=weed ${PLUGIN_NAME}:${PLUGIN_TAG} mount -filer=filer:8888 -dir=/mnt -filer.path=/
 
 
 logs:

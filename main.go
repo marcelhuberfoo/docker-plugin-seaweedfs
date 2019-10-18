@@ -395,7 +395,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 	// 	"--device=/dev/fuse:/dev/fuse",
 	// 	"--security-opt=apparmor:unconfined",
 	// 	"--entrypoint=weed",
-	// 	"svendowideit/seaweedfs-volume-plugin-rootfs:next", // TODO: need to figure this out dynamically
+	// 	"svendowideit/seaweedfs-volume-plugin-rootfs:develop", // TODO: need to figure this out dynamically
 	// 	"-v", "2",
 	// 	"mount",
 	// 	"-filer=filer:8888",
@@ -410,7 +410,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 
 	_, err := runContainer(
 		&container.Config{
-			Image:      "svendowideit/seaweedfs-volume-plugin-rootfs:next",
+			Image:      "svendowideit/seaweedfs-volume-plugin-rootfs:develop",
 			User:       fmt.Sprintf("%d", uid),
 			Entrypoint: []string{"weed"},
 			Cmd: []string{
@@ -490,7 +490,7 @@ func getPluginDir() string {
 
 	containerID, err := runContainer(
 		&container.Config{
-			Image:      "svendowideit/seaweedfs-volume-plugin-rootfs:next",
+			Image:      "svendowideit/seaweedfs-volume-plugin-rootfs:develop",
 			Entrypoint: []string{"find"},
 			Cmd:        []string{"/var/lib/docker/plugins/", "-name", filename},
 		},
