@@ -105,10 +105,6 @@ func (d *seaweedfsDriver) Create(r *volume.CreateRequest) error {
 		}
 	}
 
-	// if v.Sshcmd == "" {
-	// 	return logError("'sshcmd' option required")
-	// }
-	//v.Mountpoint = filepath.Join(d.root, fmt.Sprintf("%x", md5.Sum([]byte(v.Sshcmd))))
 	v.Mountpoint = filepath.Join("/mnt/docker-volumes", r.Name)
 	v.Name = r.Name
 

@@ -17,14 +17,13 @@ A Docker swarm.
 #### The simplest way
 
 ```
-docker node update --label-add ${STACKDOMAIN:-loc.alho.st}-seaweedfs=true <one of your swarm master nodes>
 docker stack deploy -c seaweedfs.yml seaweedfs
 ```
 
 This will start 
 * a persistent volume server on every swarm node, 
-* a persistent filer service on a master node with `${STACKDOMAIN:-loc.alho.st}-seaweedfs=true` set as a label
-* a non-persistent master node, when it moves, it will rebuild its data from the volume containers
+* a non-persistent master node,
+* an etcd node for persisting filer data on every master node
 * an s3 container that talks to the filer (untested by me)
 * and a global run-once service that will install the volume plugin on every node, ready to be used by other swarm stacks.
 
