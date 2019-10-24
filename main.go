@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
+	//"sync"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -21,6 +21,10 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/sirupsen/logrus"
+
+	"github.com/abronan/valkeyrie"
+	"github.com/abronan/valkeyrie/store"
+	"github.com/abronan/valkeyrie/store/etcd/v3"
 )
 
 const socketAddress = "/run/docker/plugins/seaweedfs.sock"
@@ -31,6 +35,9 @@ var Version string
 // CommitHash is set from the go build commandline
 var CommitHash string
 
+// ETCD prefix for volume info
+var keyPrefix = "/docker-seaweedfs-plugin/"
+
 type seaweedfsVolume struct {
 	Options []string
 
@@ -39,49 +46,89 @@ type seaweedfsVolume struct {
 }
 
 type seaweedfsDriver struct {
-	sync.RWMutex
-
 	root      string
-	statePath string
-	volumes   map[string]*seaweedfsVolume
 }
 
 func newseaweedfsDriver(root string) (*seaweedfsDriver, error) {
 	logrus.WithField("method", "new driver").Debug(root)
 
+	etcdv3.Register()
+
 	d := &seaweedfsDriver{
 		root:      filepath.Join(root, "volumes"),
-		statePath: filepath.Join(root, "state", "seaweedfs-state.json"),
-		volumes:   map[string]*seaweedfsVolume{},
-	}
-
-	data, err := ioutil.ReadFile(d.statePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			logrus.WithField("statePath", d.statePath).Debug("no state found")
-		} else {
-			return nil, err
-		}
-	} else {
-		if err := json.Unmarshal(data, &d.volumes); err != nil {
-			return nil, err
-		}
 	}
 
 	return d, nil
 }
 
-func (d *seaweedfsDriver) saveState() {
-	data, err := json.Marshal(d.volumes)
+func getStore() (s store.Store, err error) {
+   // Initialize a new store
+   kv, err := valkeyrie.NewStore(
+	store.ETCDV3,
+	[]string{"etcd:2379"},
+	&store.Config{
+		ConnectionTimeout: 10*time.Second,
+	},
+	)
 	if err != nil {
-		logrus.WithField("statePath", d.statePath).Error(err)
-		return
+		log.Fatal("Cannot create store etcs")
+		return kv, err
+	}
+	return kv, nil
+}
+
+func getVolumeInfo(name string) (vol seaweedfsVolume, err error) {
+	kv, err := getStore()
+	if err != nil {
+		return vol, err
 	}
 
-	if err := ioutil.WriteFile(d.statePath, data, 0644); err != nil {
-		logrus.WithField("savestate", d.statePath).Error(err)
+	pair, err := kv.Get(keyPrefix+name, nil)
+	if err != nil {
+		fmt.Errorf("Error trying accessing value at key: %v", name)
+		return vol, err
 	}
+
+	if err := json.Unmarshal(pair.Value, &vol); err != nil {
+		return vol, err
+	}
+
+	return vol, err
 }
+
+func updateVolumeInfo(vol seaweedfsVolume) error {
+   kv, err := getStore()
+   if err != nil {
+	   return err
+   }
+
+   data, err := json.Marshal(vol)
+   if err != nil {
+	   logrus.WithField("vol", vol).Error(err)
+	   return err
+   }
+
+   err = kv.Put(keyPrefix+vol.Name, []byte(data), nil)
+   if err != nil {
+   	fmt.Errorf("Error trying to put value at key: %v", vol.Name)
+   }
+
+   return err
+}
+
+func removeVolumeInfo(name string) error {
+	kv, err := getStore()
+	if err != nil {
+		return err
+	}
+ 
+	err = kv.Delete(keyPrefix+name)
+	if err != nil {
+		fmt.Errorf("Error trying to delete key: %v", name)
+	}
+ 
+	return err
+ }
 
 // Create Instructs the plugin that the user wants to create a volume,
 // given a user specified volume name. The plugin does not need to actually
@@ -90,9 +137,7 @@ func (d *seaweedfsDriver) saveState() {
 func (d *seaweedfsDriver) Create(r *volume.CreateRequest) error {
 	logrus.WithField("method", "create").Debugf("%#v", r)
 
-	d.Lock()
-	defer d.Unlock()
-	v := &seaweedfsVolume{}
+	var v seaweedfsVolume
 
 	for key, val := range r.Options {
 		switch key {
@@ -108,9 +153,7 @@ func (d *seaweedfsDriver) Create(r *volume.CreateRequest) error {
 	v.Mountpoint = filepath.Join("/mnt/docker-volumes", r.Name)
 	v.Name = r.Name
 
-	d.volumes[r.Name] = v
-
-	d.saveState()
+	updateVolumeInfo(v)
 
 	return nil
 }
@@ -120,11 +163,8 @@ func (d *seaweedfsDriver) Create(r *volume.CreateRequest) error {
 func (d *seaweedfsDriver) Remove(r *volume.RemoveRequest) error {
 	logrus.WithField("method", "remove").Debugf("%#v", r)
 
-	d.Lock()
-	defer d.Unlock()
-
-	v, ok := d.volumes[r.Name]
-	if !ok {
+	v, err := getVolumeInfo(r.Name)
+	if err != nil {
 		return logError("volume %s not found", r.Name)
 	}
 
@@ -134,8 +174,7 @@ func (d *seaweedfsDriver) Remove(r *volume.RemoveRequest) error {
 	if err := os.RemoveAll(v.Mountpoint); err != nil {
 		return logError(err.Error())
 	}
-	delete(d.volumes, r.Name)
-	d.saveState()
+	removeVolumeInfo(r.Name)
 	return nil
 }
 
@@ -143,11 +182,8 @@ func (d *seaweedfsDriver) Remove(r *volume.RemoveRequest) error {
 func (d *seaweedfsDriver) Path(r *volume.PathRequest) (*volume.PathResponse, error) {
 	logrus.WithField("method", "path").Debugf("%#v", r)
 
-	d.RLock()
-	defer d.RUnlock()
-
-	v, ok := d.volumes[r.Name]
-	if !ok {
+	v, err := getVolumeInfo(r.Name)
+	if err != nil {
 		return &volume.PathResponse{}, logError("volume %s not found", r.Name)
 	}
 
@@ -163,11 +199,8 @@ func (d *seaweedfsDriver) Path(r *volume.PathRequest) (*volume.PathResponse, err
 func (d *seaweedfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, error) {
 	logrus.WithField("method", "mount").Debugf("%#v", r)
 
-	d.Lock()
-	defer d.Unlock()
-
-	v, ok := d.volumes[r.Name]
-	if !ok {
+	v, err := getVolumeInfo(r.Name)
+	if err != nil {
 		return &volume.MountResponse{}, logError("volume %s not found", r.Name)
 	}
 
@@ -185,7 +218,7 @@ func (d *seaweedfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, 
 			return &volume.MountResponse{}, logError("%v already exist and it's not a directory", v.Mountpoint)
 		}
 
-		if err := d.mountVolume(v); err != nil {
+		if err := d.mountVolume(&v); err != nil {
 			return &volume.MountResponse{}, logError(err.Error())
 		}
 	}
@@ -202,14 +235,17 @@ func (d *seaweedfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, 
 func (d *seaweedfsDriver) Unmount(r *volume.UnmountRequest) error {
 	logrus.WithField("method", "unmount").Debugf("%#v", r)
 
-	d.Lock()
-	defer d.Unlock()
-	v, ok := d.volumes[r.Name]
-	if !ok {
+	v, err := getVolumeInfo(r.Name)
+	if err != nil {
 		return logError("volume %s not found", r.Name)
 	}
 
 	v.connections--
+
+	// TODO: OMG - how to make a shared concept of this??
+	// TODO: I think it might be easier to not unmount until there are no more nodes using it (for now)
+	//       Later, can keep a hash of how many mounts on each node...
+	updateVolumeInfo(v)
 
 	if v.connections <= 0 {
 		v.connections = 0
@@ -286,11 +322,8 @@ func (d *seaweedfsDriver) Unmount(r *volume.UnmountRequest) error {
 func (d *seaweedfsDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error) {
 	logrus.WithField("method", "get").Debugf("%#v", r)
 
-	d.Lock()
-	defer d.Unlock()
-
-	v, ok := d.volumes[r.Name]
-	if !ok {
+	v, err := getVolumeInfo(r.Name)
+	if err != nil {
 		return &volume.GetResponse{}, logError("volume %s not found", r.Name)
 	}
 
@@ -301,12 +334,15 @@ func (d *seaweedfsDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error)
 func (d *seaweedfsDriver) List() (*volume.ListResponse, error) {
 	logrus.WithField("method", "list").Debugf("version %s, build %s\n", Version, CommitHash)
 
-	d.Lock()
-	defer d.Unlock()
-
 	var vols []*volume.Volume
-	for name, v := range d.volumes {
-		vols = append(vols, &volume.Volume{Name: name, Mountpoint: filepath.Join(v.Mountpoint, "_data")})
+	kv, err := getStore()
+	if err != nil {
+		return &volume.ListResponse{Volumes: vols}, err
+	}
+    entries, err := kv.List(keyPrefix, nil)
+	for _, pair := range entries {
+		v, _ := getVolumeInfo(pair.Key)  // TODO: extract this / just unmarshal the json..
+		vols = append(vols, &volume.Volume{Name: v.Name, Mountpoint: filepath.Join(v.Mountpoint, "_data")})
 	}
 	return &volume.ListResponse{Volumes: vols}, nil
 }
@@ -358,11 +394,11 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 		}
 
 		logrus.Debugf("u: (%#v)", u)
-		if parsedId, pe := strconv.ParseUint(user, 10, 32); pe == nil {
-			uid = int(parsedId)
+		if parsedID, pe := strconv.ParseUint(user, 10, 32); pe == nil {
+			uid = int(parsedID)
 		}
-		if parsedId, pe := strconv.ParseUint(group, 10, 32); pe == nil {
-			gid = int(parsedId)
+		if parsedID, pe := strconv.ParseUint(group, 10, 32); pe == nil {
+			gid = int(parsedID)
 		}
 		logrus.Debugf("chown: (%s, %d, %d)", v.Mountpoint, uid, gid)
 		os.Chown(v.Mountpoint, uid, gid)
@@ -371,8 +407,8 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 	fi, _ := os.Lstat(v.Mountpoint)
 	mode := fi.Mode()
 	if uMask != "" {
-		if parsedId, pe := strconv.ParseUint(uMask, 8, 32); pe == nil {
-			mode = os.FileMode(parsedId)
+		if parsedID, pe := strconv.ParseUint(uMask, 8, 32); pe == nil {
+			mode = os.FileMode(parsedID)
 			logrus.Debugf("chmod(%s, %#o)", v.Mountpoint, mode)
 
 			os.Chmod(v.Mountpoint, mode)
