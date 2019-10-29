@@ -97,7 +97,7 @@
     ]
   },
   "network": {
-    "type": "host"
+    "type": "seaweedfs_internal"
   },
   "propagatedMount": "/mnt/docker-volumes"
 }

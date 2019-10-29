@@ -33,6 +33,21 @@ rootfs:
 	@RELEASE_DATE=${RELEASE_DATE} COMMIT_HASH=${COMMIT_HASH} DIRTY=${DIRTY} envsubst > ./plugin/config.json < config.json
 	@docker rm -vf tmp
 
+push-rootfs: rootfs
+	@echo "### push rootfs ${PLUGIN_NAME}:${PLUGIN_TAG}"
+	@docker push ${PLUGIN_NAME}-rootfs:build-${PLUGIN_TAG}
+	@docker push ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG}
+
+run-rootfs:
+	@docker run --rm -it \
+		-v /var/lib/docker/plugins/seaweedfs/rootfs/tmp:/tmp \
+		-v /var/lib/docker/plugins/seaweedfs/rootfs/mnt:/mnt \
+		-v /var/lib/docker/plugins/seaweedfs/propagated-mount:/propagated-mount \
+		-v /run:/run \
+		--net=seaweedfs_internal \
+		-e DEBUG=true \
+		${PLUGIN_NAME}-rootfs:${PLUGIN_TAG}
+
 create:
 	@echo "### remove existing plugin swarm if exists"
 	@docker volume rm -f test4 || true

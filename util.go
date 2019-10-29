@@ -58,6 +58,24 @@ func runContainer(
 		logError("Error getting Docker client: %s", err)
 		return "", err
 	}
+
+	if container, err := cli.ContainerInspect(ctx, containerName); err == nil {
+		if container.State.Running {
+			return container.ID, nil
+		}
+		// if err := cli.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{
+		// 	RemoveVolumes: true,
+		// 	RemoveLinks:   true,
+		// 	Force:         true,
+		// }); err != nil {
+		// 	return "", err
+		// }
+		if err := cli.ContainerStart(ctx, container.ID, types.ContainerStartOptions{}); err != nil {
+			return "", err
+		}
+		return container.ID, nil
+	}
+
 	reader, err := cli.ImagePull(ctx, config.Image, types.ImagePullOptions{})
 	if err != nil {
 		logError("Error pulling Container: %s", err)

@@ -14,8 +14,6 @@ A Docker swarm.
 
 ### Installation
 
-#### The simplest way
-
 ```
 docker stack deploy -c seaweedfs.yml seaweedfs
 ```
@@ -25,40 +23,12 @@ This will start
 * a non-persistent master node,
 * an etcd node for persisting filer data on every master node
 * an s3 container that talks to the filer (untested by me)
-* and a global run-once service that will install the volume plugin on every node, ready to be used by other swarm stacks.
+* the volume-plugin container on each node in the swarm.
 
 To update the plugin on every node, you can run (you only need to do this once, it will go out to every node)
 
 ```
-docker service update --force seaweedfs_docker-volume-plugin-run-once
-```
-
-#### manually, assuming you already have a seaweedfs swarm stack running
-
-```
-sven@t440s:~$ docker plugin ls
-ID                  NAME                DESCRIPTION         ENABLED
-sven@t440s:~$ docker plugin install --alias swarm svendowideit/seaweedfs-volume-plugin:next DEBUG=true
-Plugin "svendowideit/seaweedfs-volume-plugin:next" is requesting the following privileges:
- - network: [host]
- - mount: [/var/lib/docker/plugins/]
- - mount: [/run/docker.sock]
- - device: [/dev/fuse]
- - capabilities: [CAP_SYS_ADMIN]
-Do you grant the above permissions? [y/N] y
-next: Pulling from svendowideit/seaweedfs-volume-plugin
-51eeeee7b008: Download complete 
-Digest: sha256:5a50736c3b6fa574e03638f4195f6175e8691818fdccf10e0d07e59813af494b
-Status: Downloaded newer image for svendowideit/seaweedfs-volume-plugin:next
-Installed plugin svendowideit/seaweedfs-volume-plugin:next
-sven@t440s:~$ 
-sven@t440s:~$ 
-sven@t440s:~$ docker volume create -d swarm test
-test
-sven@t440s:~$ docker run --rm -it -v test:/test debian sh
-# ls test
-date.txt  etc
-# 
+docker service update --force seaweedfs_docker-volume-plugin
 ```
 
 ## Mount options.

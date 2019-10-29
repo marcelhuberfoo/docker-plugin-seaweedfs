@@ -77,11 +77,26 @@ services:
     # volumes:
     #   - data:/data
 
-  docker-volume-plugin-run-once:
-    image: docker:latest
+  # docker-volume-plugin-run-once:
+  #   image: docker:latest
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   command: "docker plugin install --alias swarm:develop --grant-all-permissions svendowideit/seaweedfs-volume-plugin:develop DEBUG=true"
+  #   deploy:
+  #     mode: global
+  #     restart_policy:
+  #       condition: none
+  docker-volume-plugin:
+    image: svendowideit/seaweedfs-volume-plugin-rootfs:develop
+    environment:
+      DEBUG: 'true'
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: "docker plugin install --alias swarm:develop --grant-all-permissions svendowideit/seaweedfs-volume-plugin:develop DEBUG=true"
+      - /var/lib/docker/plugins/swarm/rootfs/tmp:/tmp
+      - /var/lib/docker/plugins/swarm/rootfs/mnt:/mnt
+      - /var/lib/docker/plugins/swarm/propagated-mount:/propagated-mount
+      - /run:/run
+    networks:
+      - internal
     deploy:
       mode: global
       restart_policy:

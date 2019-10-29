@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
 	//"sync"
 	"time"
 
@@ -24,10 +25,12 @@ import (
 
 	"github.com/abronan/valkeyrie"
 	"github.com/abronan/valkeyrie/store"
-	"github.com/abronan/valkeyrie/store/etcd/v3"
+	etcd "github.com/abronan/valkeyrie/store/etcd/v2"
 )
 
-const socketAddress = "/run/docker/plugins/seaweedfs.sock"
+// mostly swiped from https://github.com/vieux/docker-volume-sshfs/blob/master/main.go
+
+const socketAddress = "/run/docker/plugins/swarm.sock"
 
 // Version is set from the go build commandline
 var Version string
@@ -46,32 +49,32 @@ type seaweedfsVolume struct {
 }
 
 type seaweedfsDriver struct {
-	root      string
+	root string
 }
 
 func newseaweedfsDriver(root string) (*seaweedfsDriver, error) {
 	logrus.WithField("method", "new driver").Debug(root)
 
-	etcdv3.Register()
+	etcd.Register()
 
 	d := &seaweedfsDriver{
-		root:      filepath.Join(root, "volumes"),
+		root: filepath.Join(root, "volumes"),
 	}
 
 	return d, nil
 }
 
 func getStore() (s store.Store, err error) {
-   // Initialize a new store
-   kv, err := valkeyrie.NewStore(
-	store.ETCDV3,
-	[]string{"etcd:2379"},
-	&store.Config{
-		ConnectionTimeout: 10*time.Second,
-	},
+	// Initialize a new store
+	kv, err := valkeyrie.NewStore(
+		store.ETCD,
+		[]string{"etcd:2379"},
+		&store.Config{
+			ConnectionTimeout: 5 * time.Second,
+		},
 	)
 	if err != nil {
-		log.Fatal("Cannot create store etcs")
+		log.Fatal("Cannot create store etcd (%s)", err)
 		return kv, err
 	}
 	return kv, nil
@@ -97,23 +100,23 @@ func getVolumeInfo(name string) (vol seaweedfsVolume, err error) {
 }
 
 func updateVolumeInfo(vol seaweedfsVolume) error {
-   kv, err := getStore()
-   if err != nil {
-	   return err
-   }
+	kv, err := getStore()
+	if err != nil {
+		return err
+	}
 
-   data, err := json.Marshal(vol)
-   if err != nil {
-	   logrus.WithField("vol", vol).Error(err)
-	   return err
-   }
+	data, err := json.Marshal(vol)
+	if err != nil {
+		logrus.WithField("vol", vol).Error(err)
+		return err
+	}
 
-   err = kv.Put(keyPrefix+vol.Name, []byte(data), nil)
-   if err != nil {
-   	fmt.Errorf("Error trying to put value at key: %v", vol.Name)
-   }
+	err = kv.Put(keyPrefix+vol.Name, []byte(data), nil)
+	if err != nil {
+		fmt.Errorf("Error trying to put value at key: %v", vol.Name)
+	}
 
-   return err
+	return err
 }
 
 func removeVolumeInfo(name string) error {
@@ -121,14 +124,14 @@ func removeVolumeInfo(name string) error {
 	if err != nil {
 		return err
 	}
- 
-	err = kv.Delete(keyPrefix+name)
+
+	err = kv.Delete(keyPrefix + name)
 	if err != nil {
 		fmt.Errorf("Error trying to delete key: %v", name)
 	}
- 
+
 	return err
- }
+}
 
 // Create Instructs the plugin that the user wants to create a volume,
 // given a user specified volume name. The plugin does not need to actually
@@ -153,7 +156,9 @@ func (d *seaweedfsDriver) Create(r *volume.CreateRequest) error {
 	v.Mountpoint = filepath.Join("/mnt/docker-volumes", r.Name)
 	v.Name = r.Name
 
-	updateVolumeInfo(v)
+	if err := updateVolumeInfo(v); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -171,8 +176,14 @@ func (d *seaweedfsDriver) Remove(r *volume.RemoveRequest) error {
 	if v.connections != 0 {
 		return logError("volume %s is currently used by a container", r.Name)
 	}
+
+	// if we unmount before the removeall, the data is kept in seaweedfs
+	if err = d.unmountVolume(&v); err != nil {
+		return err
+	}
+
 	if err := os.RemoveAll(v.Mountpoint); err != nil {
-		return logError(err.Error())
+		logError(err.Error())
 	}
 	removeVolumeInfo(r.Name)
 	return nil
@@ -187,7 +198,7 @@ func (d *seaweedfsDriver) Path(r *volume.PathRequest) (*volume.PathResponse, err
 		return &volume.PathResponse{}, logError("volume %s not found", r.Name)
 	}
 
-	return &volume.PathResponse{Mountpoint: filepath.Join(v.Mountpoint, "_data")}, nil
+	return &volume.PathResponse{Mountpoint: filepath.Join(getPluginDir(), "rootfs", v.Mountpoint, "_data")}, nil
 }
 
 // Mount is called once per container start.
@@ -203,6 +214,7 @@ func (d *seaweedfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, 
 	if err != nil {
 		return &volume.MountResponse{}, logError("volume %s not found", r.Name)
 	}
+	logrus.WithField("volume-info", r.Name).Debugf("%#v", v)
 
 	if v.connections == 0 {
 		fi, err := os.Lstat(v.Mountpoint)
@@ -224,8 +236,13 @@ func (d *seaweedfsDriver) Mount(r *volume.MountRequest) (*volume.MountResponse, 
 	}
 
 	v.connections++
+	if err = updateVolumeInfo(v); err != nil {
+		logrus.WithField("method", "mount").WithField("updateVolumeInfo ERROR", err).Errorf("%#v", v)
+	} else {
+		logrus.WithField("method", "mount").WithField("updateVolumeInfo", r.Name).Debugf("%#v", v)
+	}
 
-	return &volume.MountResponse{Mountpoint: filepath.Join(v.Mountpoint, "_data")}, nil
+	return &volume.MountResponse{Mountpoint: filepath.Join(getPluginDir(), "rootfs", v.Mountpoint, "_data")}, nil
 }
 
 // Docker is no longer using the named volume.
@@ -245,76 +262,92 @@ func (d *seaweedfsDriver) Unmount(r *volume.UnmountRequest) error {
 	// TODO: OMG - how to make a shared concept of this??
 	// TODO: I think it might be easier to not unmount until there are no more nodes using it (for now)
 	//       Later, can keep a hash of how many mounts on each node...
-	updateVolumeInfo(v)
+	err = updateVolumeInfo(v)
+	if err = updateVolumeInfo(v); err != nil {
+		logrus.WithField("updateVolumeInfo ERROR", err).Errorf("%#v", v)
+	} else {
+		logrus.WithField("updateVolumeInfo", r.Name).Debugf("%#v", v)
+	}
+
+	// get some interesting speedups by keeping the fusemount container running
+	return nil
 
 	if v.connections <= 0 {
 		v.connections = 0
+		updateVolumeInfo(v)
 
-		ctx := context.Background()
-		cli, err := GetDockerClient(ctx, "")
-		if err != nil {
+		if err = d.unmountVolume(&v); err != nil {
 			return err
-		}
-
-		volumeContainer := "seaweed-volume-plugin-" + v.Name
-		logrus.Debugf("Unmount(%s) requested", v.Mountpoint)
-
-		execID, err := cli.ContainerExecCreate(ctx,
-			volumeContainer,
-			types.ExecConfig{
-				User:         "0",
-				Privileged:   false,
-				Tty:          false,
-				AttachStdin:  false,
-				AttachStderr: true,
-				AttachStdout: true,
-				Detach:       false,
-				DetachKeys:   "",
-				Env:          []string{},
-				Cmd:          []string{"umount", v.Mountpoint},
-			},
-		)
-		if err != nil {
-			logError("Unmount ExecCreate: %s", err)
-		} else {
-			resp, err := cli.ContainerExecAttach(ctx,
-				execID.ID,
-				types.ExecStartCheck{
-					Detach: false,
-					Tty:    false,
-				},
-			)
-			if err != nil {
-				logError("Unmount ExecAttach: %s", err)
-			} else {
-				//read with timeout, and if its hung, kill it with fire
-				resp.Conn.SetDeadline(time.Now().Add(time.Second * 5))
-				b, err := ioutil.ReadAll(resp.Reader)
-				logrus.Debugf("unmount(%s): (Err: %s ) Output: %s", v.Mountpoint, err, b)
-				if err != nil {
-					logError("Unmount ReadAttach: %s", err)
-				}
-			}
-		}
-
-		stats, err := cli.ContainerInspect(ctx, volumeContainer)
-		if err != nil {
-			return logError("Unmount ContainerInspect: %s", err)
-		}
-		logrus.Debugf("ContainerInspect: %#v", stats)
-
-		if err := cli.ContainerRemove(ctx,
-			volumeContainer,
-			types.ContainerRemoveOptions{
-				RemoveVolumes: true,
-				RemoveLinks:   true,
-				Force:         true,
-			},
-		); err != nil {
-			return logError("Unmount ContainerRemove: %s", err)
 		}
 	}
 
+	return nil
+}
+
+func (d *seaweedfsDriver) unmountVolume(v *seaweedfsVolume) error {
+	ctx := context.Background()
+	cli, err := GetDockerClient(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	volumeContainer := "seaweed-volume-plugin-" + v.Name
+	logrus.Debugf("Unmount(%s) requested", v.Mountpoint)
+
+	execID, err := cli.ContainerExecCreate(ctx,
+		volumeContainer,
+		types.ExecConfig{
+			User:         "0",
+			Privileged:   false,
+			Tty:          false,
+			AttachStdin:  false,
+			AttachStderr: true,
+			AttachStdout: true,
+			Detach:       false,
+			DetachKeys:   "",
+			Env:          []string{},
+			Cmd:          []string{"umount", v.Mountpoint + "/_data/"},
+		},
+	)
+	if err != nil {
+		logError("Unmount ExecCreate: %s", err)
+	} else {
+		resp, err := cli.ContainerExecAttach(ctx,
+			execID.ID,
+			types.ExecStartCheck{
+				Detach: false,
+				Tty:    false,
+			},
+		)
+		if err != nil {
+			logError("Unmount ExecAttach: %s", err)
+		} else {
+			//read with timeout, and if its hung, kill it with fire
+			resp.Conn.SetDeadline(time.Now().Add(time.Second * 5))
+			b, err := ioutil.ReadAll(resp.Reader)
+			logrus.Debugf("unmount(%s): (Err: %s ) Output: %s", v.Mountpoint, err, b)
+			if err != nil {
+				logError("Unmount ReadAttach: %s", err)
+			}
+		}
+	}
+
+	stats, err := cli.ContainerInspect(ctx, volumeContainer)
+	if err != nil {
+		return logError("Unmount ContainerInspect: %s", err)
+	}
+	logrus.Debugf("ContainerInspect: %#v", stats)
+
+	// if err := cli.ContainerRemove(ctx,
+	// 	stats.ID,
+	// 	types.ContainerRemoveOptions{
+	// 		RemoveVolumes: true,
+	// 		RemoveLinks:   true,
+	// 		Force:         true,
+	// 	},
+	// ); err != nil {
+	// 	return logError("Unmount ContainerRemove: %s", err)
+	// }
 	return nil
 }
 
@@ -327,7 +360,12 @@ func (d *seaweedfsDriver) Get(r *volume.GetRequest) (*volume.GetResponse, error)
 		return &volume.GetResponse{}, logError("volume %s not found", r.Name)
 	}
 
-	return &volume.GetResponse{Volume: &volume.Volume{Name: r.Name, Mountpoint: filepath.Join(v.Mountpoint, "_data")}}, nil
+	logrus.WithField("get", "volumeinfo").Debugf("%#v", v)
+
+	return &volume.GetResponse{Volume: &volume.Volume{
+		Name:       r.Name,
+		Mountpoint: filepath.Join(getPluginDir(), "rootfs", v.Mountpoint, "_data"),
+	}}, nil
 }
 
 // List of volumes registered with the plugin.
@@ -339,11 +377,23 @@ func (d *seaweedfsDriver) List() (*volume.ListResponse, error) {
 	if err != nil {
 		return &volume.ListResponse{Volumes: vols}, err
 	}
-    entries, err := kv.List(keyPrefix, nil)
-	for _, pair := range entries {
-		v, _ := getVolumeInfo(pair.Key)  // TODO: extract this / just unmarshal the json..
-		vols = append(vols, &volume.Volume{Name: v.Name, Mountpoint: filepath.Join(v.Mountpoint, "_data")})
+	entries, err := kv.List(keyPrefix, &store.ReadOptions{Consistent: true})
+	if err != nil {
+		return &volume.ListResponse{Volumes: vols}, err
 	}
+	for _, pair := range entries {
+		v, err := getVolumeInfo(pair.Key) // TODO: extract this / just unmarshal the json..
+		if err != nil {
+			return &volume.ListResponse{Volumes: vols}, err
+		}
+		thisVol := volume.Volume{
+			Name:       v.Name,
+			Mountpoint: filepath.Join(getPluginDir(), "rootfs", v.Mountpoint, "_data"),
+		}
+		vols = append(vols, &thisVol)
+		logrus.WithField("list", pair.Key).Debugf("returns %#v\n", thisVol)
+	}
+
 	return &volume.ListResponse{Volumes: vols}, nil
 }
 
@@ -356,6 +406,8 @@ func (d *seaweedfsDriver) Capabilities() *volume.CapabilitiesResponse {
 }
 
 func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
+	logrus.WithField("method", "mountVolume").Debugf("volinfo: %#v", *v)
+
 	// TODO: need to do something with the options (uid mapping would rock)
 	// for _, option := range v.Options {
 	// 	cmd.Args = append(cmd.Args, "-o", option)
@@ -444,6 +496,8 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 	// if they force kill the plugin-vol (so long as its not yet in use?) - and then remove the mount point, and ???
 	// OR if the settings are right, we could just reuse it?
 
+	containerName := "seaweed-volume-plugin-" + v.Name
+
 	_, err := runContainer(
 		&container.Config{
 			Image:      "svendowideit/seaweedfs-volume-plugin-rootfs:develop",
@@ -453,12 +507,12 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 				"-v", "2",
 				"mount",
 				"-filer=filer:8888",
-				"-dir=" + v.Mountpoint,
+				"-dir=" + v.Mountpoint + "/_data",
 				"-filer.path=" + v.Mountpoint,
 			},
 		},
 		&container.HostConfig{
-			AutoRemove: true,
+			//AutoRemove: true,
 			//Priviledged: true,
 			CapAdd: []string{"SYS_ADMIN"},
 			Resources: container.Resources{
@@ -470,8 +524,10 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 			},
 			Mounts: []mount.Mount{
 				{
-					Type:     mount.TypeBind,
-					Source:   getPluginDir() + "/propagated-mount/",
+					Type: mount.TypeBind,
+					// TODO: figure out what the propagated-mount dir is (it works when the plugin is installed, but not using plain containers)
+					//Source:   getPluginDir() + "/propagated-mount/",
+					Source:   getPluginDir() + "/rootfs/mnt/docker-volumes/",
 					Target:   "/mnt/docker-volumes/",
 					ReadOnly: false,
 					BindOptions: &mount.BindOptions{
@@ -486,8 +542,9 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 				"seaweedfs_internal": {},
 			},
 		},
-		"seaweed-volume-plugin-"+v.Name,
+		containerName,
 	)
+	logrus.WithField("method", "mountVolume").Debugf("Started %s", containerName)
 	if err != nil {
 		return logError("Error runing Container: %s", err)
 	}
@@ -553,18 +610,18 @@ func getPluginDir() string {
 		logError("Error getting Docker client: %s", err)
 		return ""
 	}
-	defer func() {
-		if err := cli.ContainerRemove(ctx,
-			containerID,
-			types.ContainerRemoveOptions{
-				RemoveVolumes: true,
-				RemoveLinks:   true,
-				Force:         true,
-			},
-		); err != nil {
-			logError("finPlugin dir ContainerRemove: %s", err)
-		}
-	}()
+	// defer func() {
+	// 	if err := cli.ContainerRemove(ctx,
+	// 		containerID,
+	// 		types.ContainerRemoveOptions{
+	// 			RemoveVolumes: true,
+	// 			RemoveLinks:   true,
+	// 			Force:         true,
+	// 		},
+	// 	); err != nil {
+	// 		logError("findPlugin ContainerRemove(%s): %s", containerID, err)
+	// 	}
+	// }()
 
 	statusCh, errCh := cli.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
 	select {
@@ -615,12 +672,24 @@ func runCmd(command string, args ...string) (string, error) {
 	return string(output), nil
 }
 
+// TODO: detect what other versions of the plugin is running (locally and on other nodes)
+// TODO: make sure we can access docker socket, and that we're actually at the plugin socket we think we are
+// TODO: may need to figure out if installing as a swarm plugin also gives me access to the seaweedfs_internal network:
+//       https://github.com/moby/moby/blob/master/integration/service/plugin_test.go#L109
 func main() {
 	debug := os.Getenv("DEBUG")
 	if ok, _ := strconv.ParseBool(debug); ok {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
-	logrus.Infof("version %s, build %s\n", Version, CommitHash)
+	logrus.Infof("Version %s, build %s\n", Version, CommitHash)
+
+	pluginDir := getPluginDir()
+	logrus.Infof("Plugin dir: %s", pluginDir)
+
+	_, err := os.Lstat("/run/docker.sock")
+	if os.IsNotExist(err) {
+		log.Fatal(err)
+	}
 
 	d, err := newseaweedfsDriver("/mnt")
 	if err != nil {
@@ -628,5 +697,6 @@ func main() {
 	}
 	h := volume.NewHandler(d)
 	logrus.Infof("listening on %s", socketAddress)
+
 	logrus.Error(h.ServeUnix(socketAddress, 0))
 }
