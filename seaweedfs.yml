@@ -41,8 +41,10 @@ services:
     command: 'filer -master=master:9333'
     networks:
       - internal
-    # volumes:
-    #   - data:/data
+    configs:
+      - source: filer_toml
+        target: /etc/seaweedfs/filer.toml
+        mode: 0755
     deploy:
       mode: global
 
@@ -114,6 +116,10 @@ services:
 volumes:
   data:
   etcd:
+
+configs:
+  filer_toml:
+    file: ./seaweedfs/filer.toml
 
 networks:
   internal:
