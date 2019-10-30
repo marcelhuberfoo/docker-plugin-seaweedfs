@@ -2,7 +2,7 @@
 
 PREFIX = svendowideit/seaweedfs-volume
 PLUGIN_NAME = ${PREFIX}-plugin
-PLUGIN_TAG ?= next
+PLUGIN_TAG ?= develop
 
 RELEASE_DATE=$(shell date +%F)
 COMMIT_HASH=$(shell git rev-parse --short HEAD 2>/dev/null)
@@ -33,6 +33,21 @@ rootfs:
 	@RELEASE_DATE=${RELEASE_DATE} COMMIT_HASH=${COMMIT_HASH} DIRTY=${DIRTY} envsubst > ./plugin/config.json < config.json
 	@docker rm -vf tmp
 
+push-rootfs: rootfs
+	@echo "### push rootfs ${PLUGIN_NAME}:${PLUGIN_TAG}"
+	@docker push ${PLUGIN_NAME}-rootfs:build-${PLUGIN_TAG}
+	@docker push ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG}
+
+run-rootfs:
+	@docker run --rm -it \
+		-v /var/lib/docker/plugins/seaweedfs/rootfs/tmp:/tmp \
+		-v /var/lib/docker/plugins/seaweedfs/rootfs/mnt:/mnt \
+		-v /var/lib/docker/plugins/seaweedfs/propagated-mount:/propagated-mount \
+		-v /run:/run \
+		--net=seaweedfs_internal \
+		-e DEBUG=true \
+		${PLUGIN_NAME}-rootfs:${PLUGIN_TAG}
+
 create:
 	@echo "### remove existing plugin swarm if exists"
 	@docker volume rm -f test4 || true
@@ -51,7 +66,7 @@ ps:
 	@ps -U root -u | grep docker-plugin-seaweedf
 
 enter:
-	@sudo nsenter --target $(shell ps -U root -u | grep docker-plugin-seaweedf | xargs | cut -f2 -d" ") --mount --uts --ipc --net --pid sh
+	@sudo nsenter --target $(shell ps -U root -u | grep /docker-plugin-seaweedfs | xargs | cut -f2 -d" ") --mount --uts --ipc --net --pid sh
 
 mk-test-mount:
 	@docker volume create -d ${PLUGIN_NAME}:${PLUGIN_TAG} -o uid=33 -o gid=10 -o umask=0773 test4
@@ -86,7 +101,7 @@ test:
 
 
 mountall:
-	@docker run --rm -it --net=seaweedfs_internal --cap-add=SYS_ADMIN --device=/dev/fuse:/dev/fuse --security-opt=apparmor:unconfined --entrypoint=weed svendowideit/seaweedfs-volume-plugin-rootfs:next mount -filer=filer:8888 -dir=/mnt -filer.path=/
+	@docker run --rm -it --net=seaweedfs_internal --cap-add=SYS_ADMIN --device=/dev/fuse:/dev/fuse --security-opt=apparmor:unconfined --entrypoint=weed ${PLUGIN_NAME}:${PLUGIN_TAG} mount -filer=filer:8888 -dir=/mnt -filer.path=/
 
 
 logs:

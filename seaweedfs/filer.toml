@@ -1,0 +1,4 @@
+[etcd]
+enabled = true
+servers = "etcd:2379"
+timeout = "3s"

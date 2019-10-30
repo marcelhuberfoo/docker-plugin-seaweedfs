@@ -19,8 +19,8 @@ services:
     command: "master -ip 0.0.0.0 -port 9333 -defaultReplication=000"
     networks:
       - internal
-    volumes:
-      - data:/data
+    # volumes:
+    #   - data:/data
     deploy:
       replicas: 1
 
@@ -41,13 +41,18 @@ services:
     command: 'filer -master=master:9333'
     networks:
       - internal
-    volumes:
-      - data:/data
+    configs:
+      - source: filer_toml
+        target: /etc/seaweedfs/filer.toml
+        mode: 0755
     deploy:
       mode: global
 
   # TODO: figure out how to handle a swarm where the number of managers has been reduced...
   # this is a --force-new-cluster event, so probably just needs disaster recovery docs
+
+  # docker run --network seaweedfs_internal appcelerator/etcd etcdctl --endpoints=etcd:2379 put /test once
+  # docker run --network seaweedfs_internal appcelerator/etcd etcdctl --endpoints=etcd:2379 get / --prefix
   etcd:
     hostname: "{{.Node.Hostname}}_{{.Service.Name}}"
     image: appcelerator/etcd:latest
@@ -74,19 +79,47 @@ services:
     volumes:
       - data:/data
 
-  docker-volume-plugin-run-once:
-    image: docker:latest
+  # docker-volume-plugin-run-once:
+  #   image: docker:latest
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   command: "docker plugin install --alias swarm:develop --grant-all-permissions svendowideit/seaweedfs-volume-plugin:develop DEBUG=true"
+  #   deploy:
+  #     mode: global
+  #     restart_policy:
+  #       condition: none
+  prepare-plugin-dir-run-once:
+    image: alpine:latest
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: "docker plugin install --alias swarm --grant-all-permissions svendowideit/seaweedfs-volume-plugin:next DEBUG=true"
+      - /var/lib/docker/plugins:/var/lib/docker/plugins
+    command: "mkdir -p /var/lib/docker/plugins/swarm/rootfs/tmp /var/lib/docker/plugins/swarm/rootfs/mnt"
     deploy:
       mode: global
       restart_policy:
         condition: none
 
+
+  docker-volume-plugin:
+    image: svendowideit/seaweedfs-volume-plugin-rootfs:develop
+    environment:
+      DEBUG: 'true'
+    volumes:
+      - /var/lib/docker/plugins/swarm/rootfs/tmp:/tmp
+      - /var/lib/docker/plugins/swarm/rootfs/mnt:/mnt
+      #- /var/lib/docker/plugins/swarm/propagated-mount:/propagated-mount
+      - /run:/run
+    networks:
+      - internal
+    deploy:
+      mode: global
+
 volumes:
   data:
   etcd:
+
+configs:
+  filer_toml:
+    file: ./seaweedfs/filer.toml
 
 networks:
   internal:
