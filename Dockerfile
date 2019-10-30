@@ -28,7 +28,7 @@ FROM alpine
 ####
 # Install SeaweedFS Client
 ####
-ARG SEAWEEDFS_VERSION=1.42
+ARG SEAWEEDFS_VERSION=1.44
 ENV SEAWEEDFS_VERSION=$SEAWEEDFS_VERSION
 RUN apk update && \
     apk add fuse && \
@@ -39,9 +39,11 @@ RUN apk update && \
     rm -rf /tmp/*
 
 # I have a docker socket, and this may help me test
+ARG DOCKER_VERSION=19.03.4
+ENV DOCKER_VERSION=$DOCKER_VERSION
 RUN cd /tmp \
-    && wget https://download.docker.com/linux/static/stable/x86_64/docker-19.03.0.tgz \
-    && tar zxvf docker-19.03.0.tgz \
+    && wget https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz \
+    && tar zxvf docker-${DOCKER_VERSION}.tgz \
     && cp docker/docker /bin/ \
     && rm -rf docker*
 
