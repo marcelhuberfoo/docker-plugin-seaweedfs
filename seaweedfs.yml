@@ -76,8 +76,8 @@ services:
     command: 's3 -filer=filer:8888'
     networks:
       - internal
-    # volumes:
-    #   - data:/data
+    volumes:
+      - data:/data
 
   # docker-volume-plugin-run-once:
   #   image: docker:latest
