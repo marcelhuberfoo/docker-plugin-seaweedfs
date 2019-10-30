@@ -86,6 +86,17 @@ services:
   #     mode: global
   #     restart_policy:
   #       condition: none
+  prepare-plugin-dir-run-once:
+    image: alpine:latest
+    volumes:
+      - /var/lib/docker/plugins:/var/lib/docker/plugins
+    command: "mkdir -p /var/lib/docker/plugins/swarm/rootfs/tmp /var/lib/docker/plugins/swarm/rootfs/mnt"
+    deploy:
+      mode: global
+      restart_policy:
+        condition: none
+
+
   docker-volume-plugin:
     image: svendowideit/seaweedfs-volume-plugin-rootfs:develop
     environment:
@@ -93,14 +104,12 @@ services:
     volumes:
       - /var/lib/docker/plugins/swarm/rootfs/tmp:/tmp
       - /var/lib/docker/plugins/swarm/rootfs/mnt:/mnt
-      - /var/lib/docker/plugins/swarm/propagated-mount:/propagated-mount
+      #- /var/lib/docker/plugins/swarm/propagated-mount:/propagated-mount
       - /run:/run
     networks:
       - internal
     deploy:
       mode: global
-      restart_policy:
-        condition: none
 
 volumes:
   data:
