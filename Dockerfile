@@ -21,7 +21,7 @@ RUN set -ex \
     && go install --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}"
 
 RUN set -ex \
-    && apk del .build-deps
+    && apk del --no-cache .build-deps
 CMD ["/go/bin/docker-plugin-seaweedfs"]
 
 FROM alpine
@@ -30,12 +30,12 @@ FROM alpine
 ####
 ARG SEAWEEDFS_VERSION=1.44
 ENV SEAWEEDFS_VERSION=$SEAWEEDFS_VERSION
-RUN apk update && \
-    apk add fuse && \
-    apk add --no-cache --virtual build-dependencies --update wget curl ca-certificates && \
+RUN apk upgrade --no-cache && \
+    apk add --no-cache fuse && \
+    apk add --no-cache --virtual build-dependencies ca-certificates && \
     wget -qO /tmp/linux_amd64.tar.gz https://github.com/chrislusf/seaweedfs/releases/download/${SEAWEEDFS_VERSION}/linux_amd64.tar.gz && \
     tar -C /usr/bin/ -xzvf /tmp/linux_amd64.tar.gz && \
-    apk del build-dependencies && \
+    apk del --no-cache build-dependencies && \
     rm -rf /tmp/*
 
 # I have a docker socket, and this may help me test
