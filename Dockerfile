@@ -19,11 +19,11 @@ RUN set -ex \
     && apk del --no-cache .build-deps
 CMD ["/app/docker-plugin-seaweedfs"]
 
-FROM alpine
+FROM alpine:latest
 ####
 # Install SeaweedFS Client
 ####
-ARG SEAWEEDFS_VERSION=1.44
+ARG SEAWEEDFS_VERSION=1.52
 ENV SEAWEEDFS_VERSION=$SEAWEEDFS_VERSION
 RUN apk upgrade --no-cache && \
     apk add --no-cache fuse && \
@@ -34,10 +34,10 @@ RUN apk upgrade --no-cache && \
     rm -rf /tmp/*
 
 # I have a docker socket, and this may help me test
-ARG DOCKER_VERSION=19.03.4
+ARG DOCKER_VERSION=19.03.5
 ENV DOCKER_VERSION=$DOCKER_VERSION
 RUN cd /tmp \
-    && wget https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz \
+    && wget --quiet https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz \
     && tar zxvf docker-${DOCKER_VERSION}.tgz \
     && cp docker/docker /bin/ \
     && rm -rf docker*
@@ -47,5 +47,5 @@ RUN echo "user_allow_other" >> /etc/fuse.conf
 
 RUN mkdir -p /run/docker/plugins /mnt/state /mnt/volumes
 
-COPY --from=builder /go/bin/docker-plugin-seaweedfs .
+COPY --from=builder /app/docker-plugin-seaweedfs .
 CMD ["/docker-plugin-seaweedfs"]
