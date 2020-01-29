@@ -25,6 +25,8 @@ FROM alpine:latest
 ####
 ARG SEAWEEDFS_VERSION=1.52
 ENV SEAWEEDFS_VERSION=$SEAWEEDFS_VERSION
+ARG PLUGIN_IMAGE_ROOTFS_TAG
+ENV PLUGIN_IMAGE_ROOTFS_TAG=$PLUGIN_IMAGE_ROOTFS_TAG
 RUN apk upgrade --no-cache && \
     apk add --no-cache fuse && \
     apk add --no-cache --virtual build-dependencies ca-certificates && \

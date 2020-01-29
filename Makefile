@@ -39,6 +39,7 @@ rootfs:
 		--build-arg "DIRTY=${DIRTY}" \
 		--build-arg "DOCKER_VERSION=${DOCKER_VERSION}" \
 		--build-arg "SEAWEEDFS_VERSION=${SEAWEEDFS_VERSION}" \
+		--build-arg "PLUGIN_IMAGE_ROOTFS_TAG=${PLUGIN_IMAGE_ROOTFS_TAG}" \
 		.
 	@echo "### create rootfs directory in ./plugin/rootfs"
 	@mkdir -p ./plugin/rootfs
