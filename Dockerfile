@@ -1,9 +1,4 @@
-FROM golang:1.12-alpine as builder
-
-WORKDIR /src
-RUN set -ex \
-    && apk add --no-cache --virtual .build-deps \
-    gcc libc-dev git
+FROM golang:1.13-alpine as builder
 
 ARG RELEASE_DATE
 ENV RELEASE_DATE=$RELEASE_DATE
@@ -12,17 +7,17 @@ ENV COMMIT_HASH=$COMMIT_HASH
 ARG DIRTY
 ENV DIRTY=$DIRTY
 
-COPY go.* /src/
-RUN go mod download
-
+WORKDIR /src
 COPY . /src/
-RUN set -ex \
-    && echo --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}" \
-    && go install --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}"
 
 RUN set -ex \
+    && apk add --no-cache --virtual .build-deps gcc libc-dev git \
+    && go mod download \
+    && go install --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}" \
+    && mkdir -p /app && cp -p $GOPATH/bin/docker-plugin-seaweedfs /app \
+    && rm -rf $GOPATH \
     && apk del --no-cache .build-deps
-CMD ["/go/bin/docker-plugin-seaweedfs"]
+CMD ["/app/docker-plugin-seaweedfs"]
 
 FROM alpine
 ####
