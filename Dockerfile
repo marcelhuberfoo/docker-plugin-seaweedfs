@@ -13,7 +13,7 @@ ENV COMMIT_HASH=$COMMIT_HASH
 ARG DIRTY
 ENV DIRTY=$DIRTY
 
-COPY . /src/
+COPY *.go /src/
 
 RUN set -ex \
     && go install --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}"
