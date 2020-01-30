@@ -1,6 +1,6 @@
 .PHONY: all build clean rootfs create enable ps enter test mountall logs push
 
-PREFIX = svendowideit/seaweedfs-volume
+PREFIX ?= svendowideit/seaweedfs-volume
 PLUGIN_NAME = ${PREFIX}-plugin
 PLUGIN_TAG ?= develop
 PLUGIN_IMAGE_ROOTFS = ${PLUGIN_NAME}-rootfs
