@@ -55,9 +55,9 @@
     }
   ],
   "interface": {
-    "socket": "seaweedfs.sock",
+    "socket": "swarm.sock",
     "types": [
-      "docker.volumedriver/2.0"
+      "docker.volumedriver/1.0"
     ]
   },
   "mounts": [
@@ -97,7 +97,7 @@
     ]
   },
   "network": {
-    "type": "seaweedfs_internal"
+    "type": "host"
   },
   "propagatedMount": "/mnt/docker-volumes"
 }
