@@ -46,7 +46,7 @@ rootfs:
 	@docker create --name tmp ${PLUGIN_IMAGE_ROOTFS_TAG}
 	@docker export tmp | tar -x -C ./plugin/rootfs
 	@echo "### add version into to config.json and stage into ./plugin/"
-	@RELEASE_DATE=${RELEASE_DATE} COMMIT_HASH=${COMMIT_HASH} DIRTY=${DIRTY} envsubst > ./plugin/config.json < config.json
+	@RELEASE_DATE=${RELEASE_DATE} COMMIT_HASH=${COMMIT_HASH} DIRTY=${DIRTY} PLUGIN_IMAGE_ROOTFS_TAG=${PLUGIN_IMAGE_ROOTFS_TAG} envsubst > ./plugin/config.json < config.json
 	@docker rm -vf tmp
 
 push-rootfs: rootfs

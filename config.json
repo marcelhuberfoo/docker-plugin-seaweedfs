@@ -52,6 +52,13 @@
         "value"
       ],
       "value": "true"
+    },
+    {
+      "name": "PLUGIN_IMAGE_ROOTFS_TAG",
+      "settable": [
+        "value"
+      ],
+      "value": "${PLUGIN_IMAGE_ROOTFS_TAG}"
     }
   ],
   "interface": {

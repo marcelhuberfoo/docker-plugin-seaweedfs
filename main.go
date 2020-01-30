@@ -38,6 +38,9 @@ var Version string
 // CommitHash is set from the go build commandline
 var CommitHash string
 
+// docker plugin image rootfs tag
+var pluginImageRootfsTag = "svendowideit/seaweedfs-volume-plugin-rootfs:develop"
+
 // ETCD prefix for volume info
 var keyPrefix = "/docker-seaweedfs-plugin/"
 
@@ -500,7 +503,7 @@ func (d *seaweedfsDriver) mountVolume(v *seaweedfsVolume) error {
 
 	_, err := runContainer(
 		&container.Config{
-			Image:      "svendowideit/seaweedfs-volume-plugin-rootfs:develop",
+			Image:      pluginImageRootfsTag,
 			User:       fmt.Sprintf("%d", uid),
 			Entrypoint: []string{"weed"},
 			Cmd: []string{
@@ -583,11 +586,12 @@ func getPluginDir() string {
 
 	containerID, err := runContainer(
 		&container.Config{
-			Image:      "svendowideit/seaweedfs-volume-plugin-rootfs:develop",
+			Image:      pluginImageRootfsTag,
 			Entrypoint: []string{"find"},
 			Cmd:        []string{"/var/lib/docker/plugins/", "-name", filename},
 		},
 		&container.HostConfig{
+			AutoRemove: true,
 			Mounts: []mount.Mount{
 				{
 					Type:   mount.TypeBind,
@@ -682,6 +686,12 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 	logrus.Infof("Version %s, build %s\n", Version, CommitHash)
+
+	imageTag := os.Getenv("PLUGIN_IMAGE_ROOTFS_TAG")
+	if imageTag != "" {
+		pluginImageRootfsTag = imageTag
+	}
+	logrus.Infof("Using plugin image: %s\n", pluginImageRootfsTag)
 
 	pluginDir := getPluginDir()
 	logrus.Infof("Plugin dir: %s", pluginDir)
