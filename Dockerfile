@@ -1,9 +1,10 @@
-FROM golang:1.12-alpine as builder
+FROM golang:1.13-alpine as builder
 
 WORKDIR /src
+COPY go.* /src/
+
 RUN set -ex \
-    && apk add --no-cache --virtual .build-deps \
-    gcc libc-dev git
+    && go mod download
 
 ARG RELEASE_DATE
 ENV RELEASE_DATE=$RELEASE_DATE
@@ -12,40 +13,32 @@ ENV COMMIT_HASH=$COMMIT_HASH
 ARG DIRTY
 ENV DIRTY=$DIRTY
 
-COPY go.* /src
-RUN go mod download
+COPY *.go /src/
 
-COPY . /src
 RUN set -ex \
-    && echo --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}" \
     && go install --ldflags "-extldflags '-static' -X main.Version=${RELEASE_DATE} -X main.CommitHash=${COMMIT_HASH}${DIRTY}"
-
-RUN set -ex \
-    && apk del .build-deps
 CMD ["/go/bin/docker-plugin-seaweedfs"]
 
-FROM alpine
+FROM alpine:latest
 ####
 # Install SeaweedFS Client
 ####
-ARG SEAWEEDFS_VERSION=1.44
+ARG SEAWEEDFS_VERSION=1.52
 ENV SEAWEEDFS_VERSION=$SEAWEEDFS_VERSION
-RUN apk update && \
-    apk add fuse && \
-    apk add --no-cache --virtual build-dependencies --update wget curl ca-certificates && \
-    wget -qO /tmp/linux_amd64.tar.gz https://github.com/chrislusf/seaweedfs/releases/download/${SEAWEEDFS_VERSION}/linux_amd64.tar.gz && \
-    tar -C /usr/bin/ -xzvf /tmp/linux_amd64.tar.gz && \
-    apk del build-dependencies && \
-    rm -rf /tmp/*
-
+ARG PLUGIN_IMAGE_ROOTFS_TAG
+ENV PLUGIN_IMAGE_ROOTFS_TAG=$PLUGIN_IMAGE_ROOTFS_TAG
 # I have a docker socket, and this may help me test
-ARG DOCKER_VERSION=19.03.4
+ARG DOCKER_VERSION=19.03.5
 ENV DOCKER_VERSION=$DOCKER_VERSION
-RUN cd /tmp \
-    && wget https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz \
-    && tar zxvf docker-${DOCKER_VERSION}.tgz \
-    && cp docker/docker /bin/ \
-    && rm -rf docker*
+
+RUN apk upgrade --no-cache \
+    && apk add --no-cache fuse \
+    && apk add --no-cache --virtual build-dependencies ca-certificates tar \
+    && wget --quiet -O - https://github.com/chrislusf/seaweedfs/releases/download/${SEAWEEDFS_VERSION}/linux_amd64.tar.gz | \
+        tar xzvf - -C /usr/bin/ \
+    && wget --quiet -O - https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz | \
+        tar xzvf - -C /bin --strip-components=1 docker/docker \
+    && apk del --no-cache build-dependencies
 
 # let non-root users fusemount
 RUN echo "user_allow_other" >> /etc/fuse.conf

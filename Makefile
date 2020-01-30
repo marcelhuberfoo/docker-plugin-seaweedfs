@@ -1,8 +1,13 @@
 .PHONY: all build clean rootfs create enable ps enter test mountall logs push
 
-PREFIX = svendowideit/seaweedfs-volume
+PREFIX ?= svendowideit/seaweedfs-volume
 PLUGIN_NAME = ${PREFIX}-plugin
 PLUGIN_TAG ?= develop
+PLUGIN_IMAGE_ROOTFS = ${PLUGIN_NAME}-rootfs
+PLUGIN_IMAGE_ROOTFS_TAG = ${PLUGIN_IMAGE_ROOTFS}:${PLUGIN_TAG}
+PLUGIN_BUILD_IMAGE_ROOTFS_TAG = ${PLUGIN_IMAGE_ROOTFS}:build-${PLUGIN_TAG}
+DOCKER_VERSION ?= 19.03.5
+SEAWEEDFS_VERSION ?= 1.52
 
 RELEASE_DATE=$(shell date +%F)
 COMMIT_HASH=$(shell git rev-parse --short HEAD 2>/dev/null)
@@ -21,22 +26,33 @@ clean:
 	@rm -rf ./plugin
 
 rootfs:
-	@echo "### docker build: rootfs image with ${PLUGIN_NAME}-rootfs (${RELEASE_DATE}) ${COMMIT_HASH}${DIRTY}"
+	@echo "### docker build: rootfs image with ${PLUGIN_IMAGE_ROOTFS} (${RELEASE_DATE}) ${COMMIT_HASH}${DIRTY}"
 	@echo "${GITSTATUS}"
-	@docker build --target builder -t ${PLUGIN_NAME}-rootfs:build-${PLUGIN_TAG} --build-arg "RELEASE_DATE=${RELEASE_DATE}" --build-arg "COMMIT_HASH=${COMMIT_HASH}" --build-arg "DIRTY=${DIRTY}" .
-	@docker build -t ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG} --build-arg "RELEASE_DATE=${RELEASE_DATE}" --build-arg "COMMIT_HASH=${COMMIT_HASH}" --build-arg "DIRTY=${DIRTY}" .
+	@docker build --target builder -t ${PLUGIN_BUILD_IMAGE_ROOTFS_TAG} \
+		--build-arg "RELEASE_DATE=${RELEASE_DATE}" \
+		--build-arg "COMMIT_HASH=${COMMIT_HASH}" \
+		--build-arg "DIRTY=${DIRTY}" \
+		.
+	@docker build -t ${PLUGIN_IMAGE_ROOTFS_TAG} \
+		--build-arg "RELEASE_DATE=${RELEASE_DATE}" \
+		--build-arg "COMMIT_HASH=${COMMIT_HASH}" \
+		--build-arg "DIRTY=${DIRTY}" \
+		--build-arg "DOCKER_VERSION=${DOCKER_VERSION}" \
+		--build-arg "SEAWEEDFS_VERSION=${SEAWEEDFS_VERSION}" \
+		--build-arg "PLUGIN_IMAGE_ROOTFS_TAG=${PLUGIN_IMAGE_ROOTFS_TAG}" \
+		.
 	@echo "### create rootfs directory in ./plugin/rootfs"
 	@mkdir -p ./plugin/rootfs
-	@docker create --name tmp ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG}
+	@docker create --name tmp ${PLUGIN_IMAGE_ROOTFS_TAG}
 	@docker export tmp | tar -x -C ./plugin/rootfs
 	@echo "### add version into to config.json and stage into ./plugin/"
 	@RELEASE_DATE=${RELEASE_DATE} COMMIT_HASH=${COMMIT_HASH} DIRTY=${DIRTY} envsubst > ./plugin/config.json < config.json
 	@docker rm -vf tmp
 
 push-rootfs: rootfs
-	@echo "### push rootfs ${PLUGIN_NAME}:${PLUGIN_TAG}"
-	@docker push ${PLUGIN_NAME}-rootfs:build-${PLUGIN_TAG}
-	@docker push ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG}
+	@echo "### push rootfs ${PLUGIN_IMAGE_ROOTFS}"
+	@docker push ${PLUGIN_BUILD_IMAGE_ROOTFS_TAG}
+	@docker push ${PLUGIN_IMAGE_ROOTFS_TAG}
 
 run-rootfs:
 	@docker run --rm -it \
@@ -46,7 +62,7 @@ run-rootfs:
 		-v /run:/run \
 		--net=seaweedfs_internal \
 		-e DEBUG=true \
-		${PLUGIN_NAME}-rootfs:${PLUGIN_TAG}
+		${PLUGIN_IMAGE_ROOTFS_TAG}
 
 create:
 	@echo "### remove existing plugin swarm if exists"
@@ -58,7 +74,7 @@ create:
 
 #TODO: add an "ensure seaweedfs stack is up and running step that is used by "make all"
 
-enable:		
+enable:
 	@echo "### enable plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"
 	@docker plugin enable ${PLUGIN_NAME}:${PLUGIN_TAG}
 
@@ -99,16 +115,14 @@ test:
 # TODO: need a test-clean that removes the dirs from seaweedfs
 # TODO: and some way to "start over" (atm, remove the seaweedfs stack, remove the volumes)
 
-
 mountall:
 	@docker run --rm -it --net=seaweedfs_internal --cap-add=SYS_ADMIN --device=/dev/fuse:/dev/fuse --security-opt=apparmor:unconfined --entrypoint=weed ${PLUGIN_NAME}:${PLUGIN_TAG} mount -filer=filer:8888 -dir=/mnt -filer.path=/
-
 
 logs:
 	@sudo journalctl -fu docker | grep $(shell docker plugin inspect --format "{{.Id}}" ${PLUGIN_NAME}:${PLUGIN_TAG})
 
 push:  clean rootfs create enable
 	@echo "### push plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"
-	@docker push ${PLUGIN_NAME}-rootfs:build-${PLUGIN_TAG}
-	@docker push ${PLUGIN_NAME}-rootfs:${PLUGIN_TAG}
+	@docker push ${PLUGIN_BUILD_IMAGE_ROOTFS_TAG}
+	@docker push ${PLUGIN_IMAGE_ROOTFS_TAG}
 	@docker plugin push ${PLUGIN_NAME}:${PLUGIN_TAG}
